@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Trad training daily at 03:15
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Unit=trad-train.service
+
+[Install]
+WantedBy=timers.target

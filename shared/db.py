@@ -8,7 +8,7 @@ except Exception:
   load_dotenv = None
 
 
-# Attempt to load environment from config/.env once at import time
+# Attempt to load environment from common locations once at import time
 def _load_env():
   if load_dotenv is None:
     return
@@ -16,6 +16,8 @@ def _load_env():
   candidates = [
     Path("config/.env"),
     Path(__file__).resolve().parent.parent / "config/.env",
+    Path("/etc/trad/.env"),
+    Path("/etc/trad/trad.env"),
   ]
   for c in candidates:
     if c.exists():

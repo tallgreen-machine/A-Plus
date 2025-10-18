@@ -1,0 +1,16 @@
+/var/log/trad-*.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    create 0644 root root
+    dateext
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main trad-encoder.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main trad-meta.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main trad-backfill.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main trad-train.service 2>/dev/null || true
+    endscript
+}

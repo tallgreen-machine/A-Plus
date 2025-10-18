@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Trad Encoder every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=trad-encoder.service
+
+[Install]
+WantedBy=timers.target
