@@ -1,0 +1,8 @@
+gymnasium
+stable-baselines3
+torch
+pandas
+numpy
+psycopg2-binary
+ccxt
+python-dotenv
