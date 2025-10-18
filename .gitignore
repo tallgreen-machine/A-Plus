@@ -1,0 +1,22 @@
+# Environments
+.env
+*.env
+.venv
+env/
+venv/
+
+# VSCode
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Data
+*.csv
+*.json
+
+# Exceptions
+!active_patterns.json.example

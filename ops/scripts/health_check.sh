@@ -7,10 +7,10 @@ if [ -f /etc/trad/trad.env ]; then
 fi
 
 echo "[health] checking DB connectivity..."
-psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-trad}" -d "${DB_NAME:-trad}" -c "SELECT 1;" >/dev/null
+psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-traduser}" -d "${DB_NAME:-trad}" -c "SELECT 1;" >/dev/null
 
 echo "[health] checking embeddings exist..."
-psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-trad}" -d "${DB_NAME:-trad}" -c "SELECT symbol, count(*) FROM current_embeddings GROUP BY symbol;"
+psql -h "${DB_HOST:-localhost}" -p "${DB_PORT:-5432}" -U "${DB_USER:-traduser}" -d "${DB_NAME:-trad}" -c "SELECT symbol, count(*) FROM current_embeddings GROUP BY symbol;"
 
 echo "[health] checking model file..."
 if [ -f /srv/trad/policy/models/ppo_trader.zip ]; then

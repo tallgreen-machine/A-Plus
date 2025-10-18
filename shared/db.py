@@ -29,21 +29,29 @@ def _load_env():
 _load_env()
 
 
-def get_db_conn():
-    """Create a psycopg2 connection using env vars.
+def get_db_conn(host=None, port=None, name=None, user=None, password=None):
+    """Create a psycopg2 connection using env vars or provided arguments."""
+    host = host or os.getenv("DB_HOST", "127.0.0.1") # Default to IPv4 loopback
+    port = port or int(os.getenv("DB_PORT", "5432"))
+    name = name or os.getenv("DB_NAME", "trad")
+    user = user or os.getenv("DB_USER", "traduser")
+    password = password or os.getenv("DB_PASSWORD")
 
-    Required env vars (with defaults for local dev):
-      - DB_HOST (default: localhost)
-      - DB_PORT (default: 5432)
-      - DB_NAME (default: trad)
-      - DB_USER (default: trad)
-      - DB_PASSWORD (default: tradpassword)
-    """
-    host = os.getenv("DB_HOST", "localhost")
-    port = int(os.getenv("DB_PORT", "5432"))
-    name = os.getenv("DB_NAME", "trad")
-    user = os.getenv("DB_USER", "trad")
-    password = os.getenv("DB_PASSWORD", "tradpassword")
+    if not password:
+        raise ValueError("DB_PASSWORD is not set.")
+
+    conn = psycopg2.connect(
+        host=host,
+        port=port,
+        dbname=name,
+        user=user,
+        password=password,
+        cursor_factory=psycopg2.extras.DictCursor,
+        connect_timeout=5  # Add a 5-second timeout
+    )
+    conn.autocommit = True
+    return conn
+    password = password or os.getenv("DB_PASSWORD", "tradpassword")
 
     conn = psycopg2.connect(
         host=host,
