@@ -56,12 +56,77 @@
         }
 
         setInterval(fetchData, 5000); // Refresh every 5 seconds
-        window.onload = fetchData;
+        
+        function getConfig() {
+            fetch('/api/config')
+                .then(response => response.json())
+                .then(data => {
+                    if(data.timeframe) {
+                        document.getElementById('timeframe').value = data.timeframe;
+                    }
+                });
+        }
+
+        function saveConfig() {
+            const timeframe = document.getElementById('timeframe').value;
+            const statusEl = document.getElementById('config-status');
+            statusEl.innerText = 'Saving configuration and restarting bot...';
+            statusEl.classList.remove('text-red-500');
+
+
+            fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ timeframe: timeframe }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    statusEl.innerText = 'Configuration saved. Bot is restarting. This may take a moment.';
+                } else {
+                    statusEl.innerText = `Error: ${data.error}`;
+                    statusEl.classList.add('text-red-500');
+                }
+            })
+            .catch(error => {
+                statusEl.innerText = `Error: ${error}`;
+                statusEl.classList.add('text-red-500');
+            });
+        }
+
+        window.onload = function() {
+            fetchData();
+            getConfig();
+            document.getElementById('save-config').addEventListener('click', saveConfig);
+        };
     </script>
 </head>
 <body class="bg-gray-900 text-white font-sans">
     <div class="container mx-auto p-8">
         <h1 class="text-4xl font-bold mb-8">A-Plus Trading Bot Dashboard</h1>
+
+        <!-- Control Panel -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 class="text-2xl font-bold mb-4">Control Panel</h2>
+            <div class="flex items-center space-x-4">
+                <label for="timeframe" class="text-gray-400">Candle Timeframe:</label>
+                <select id="timeframe" name="timeframe" class="bg-gray-700 border border-gray-600 rounded-md py-2 px-3">
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="30m">30 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="4h">4 Hours</option>
+                    <option value="1d">1 Day</option>
+                </select>
+                <button id="save-config" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
+                    Save & Restart Bot
+                </button>
+            </div>
+            <p id="config-status" class="text-sm text-gray-500 mt-2"></p>
+        </div>
 
         <!-- Portfolio -->
         <div class="bg-gray-800 p-6 rounded-lg mb-8">

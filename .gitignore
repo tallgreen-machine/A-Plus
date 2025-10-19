@@ -20,3 +20,6 @@ __pycache__/
 
 # Exceptions
 !active_patterns.json.example
+
+# Backtest results
+*.png

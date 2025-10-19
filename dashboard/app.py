@@ -5,9 +5,10 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root))
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 from flask_httpauth import HTTPBasicAuth
 import os
+import subprocess
 from dotenv import load_dotenv
 from shared.db import get_db_conn
 
@@ -41,6 +42,45 @@ def auth_check():
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/config', methods=['GET', 'POST'])
+def manage_config():
+    config_path = '/etc/aplus/aplus.env'
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            timeframe = data.get('timeframe')
+            if not timeframe:
+                return jsonify({'success': False, 'error': 'Timeframe not provided'}), 400
+
+            # Read the current config
+            with open(config_path, 'r') as f:
+                lines = f.readlines()
+
+            # Write back the modified config
+            with open(config_path, 'w') as f:
+                for line in lines:
+                    if line.startswith('TIMEFRAMES='):
+                        f.write(f'TIMEFRAMES={timeframe}\n')
+                    else:
+                        f.write(line)
+            
+            # Restart the bot
+            subprocess.run(['sudo', 'systemctl', 'restart', 'aplus.service'], check=True)
+            
+            return jsonify({'success': True})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 500
+    else: # GET
+        try:
+            with open(config_path, 'r') as f:
+                for line in f:
+                    if line.startswith('TIMEFRAMES='):
+                        timeframe = line.strip().split('=')[1]
+                        return jsonify({'timeframe': timeframe})
+            return jsonify({'error': 'Timeframe not found in config'}), 404
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
 @app.route('/api/portfolio')
 def get_portfolio():
