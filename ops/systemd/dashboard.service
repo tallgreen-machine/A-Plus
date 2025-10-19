@@ -1,0 +1,16 @@
+[Unit]
+Description=A-Plus Web Dashboard
+After=network.target
+
+[Service]
+ExecStart=/srv/aplus/dashboard/.venv/bin/python3 /srv/aplus/dashboard/app.py
+WorkingDirectory=/srv/aplus/dashboard
+Restart=always
+User=root
+Group=root
+EnvironmentFile=/etc/aplus/aplus.env
+StandardOutput=append:/var/log/aplus-dashboard.log
+StandardError=append:/var/log/aplus-dashboard.log
+
+[Install]
+WantedBy=multi-user.target

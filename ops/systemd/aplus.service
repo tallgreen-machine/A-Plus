@@ -1,0 +1,16 @@
+[Unit]
+Description=A-Plus Trading Bot
+After=network.target
+
+[Service]
+ExecStart=/srv/aplus/.venv/bin/python3 /srv/aplus/main.py
+WorkingDirectory=/srv/aplus
+Restart=always
+User=root
+Group=root
+EnvironmentFile=/etc/aplus/aplus.env
+StandardOutput=append:/var/log/aplus.log
+StandardError=append:/var/log/aplus.log
+
+[Install]
+WantedBy=multi-user.target

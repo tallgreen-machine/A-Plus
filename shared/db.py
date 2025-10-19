@@ -51,8 +51,3 @@ def get_db_conn(host=None, port=None, name=None, user=None, password=None):
     )
     conn.autocommit = True
     return conn
-        password=password,
-        cursor_factory=psycopg2.extras.RealDictCursor,
-    )
-    conn.autocommit = True
-    return conn

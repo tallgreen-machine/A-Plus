@@ -1,9 +1,0 @@
-[Unit]
-Description=Run Trad Backfill hourly at :03
-
-[Timer]
-OnCalendar=*-*-* *:03:00
-Unit=trad-backfill.service
-
-[Install]
-WantedBy=timers.target

@@ -1,0 +1,7 @@
+:80 {
+    forward_auth localhost:5001 {
+        uri /auth
+        copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+    }
+    reverse_proxy localhost:5001
+}
