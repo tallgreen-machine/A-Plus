@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Usage:
-#   SERVER=1.2.3.4 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
+#   SERVER=1.2.3.4 SSH_USER=root DEST=/srv/aplus ./ops/scripts/deploy_to_server.sh
 # Requires: ssh, rsync, sudo on remote (or SSH_USER=root)
 
 SERVER="${SERVER:-}"
 SSH_USER="${SSH_USER:-root}"
-DEST="${DEST:-/srv/trad}"
+DEST="${DEST:-/srv/aplus}"
 
 if [[ -z "$SERVER" ]]; then
   echo "SERVER env var is required (IP or hostname)" >&2
@@ -25,34 +25,34 @@ rsync -az --delete \
 echo "[deploy] installing environment config"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/trad}"
-sudo mkdir -p /etc/trad
-sudo cp "${DEST}/config/trad.env" /etc/trad/trad.env
+DEST="${DEST:-/srv/aplus}"
+sudo mkdir -p /etc/aplus
+sudo cp "${DEST}/config/aplus.env" /etc/aplus/aplus.env
 EOF
 
 echo "[deploy] installing systemd units and timers"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/trad}"
-sudo mkdir -p /etc/trad
-sudo touch /var/log/trad-encoder.log /var/log/trad-meta.log /var/log/trad-backfill.log /var/log/trad-train.log || true
+DEST="${DEST:-/srv/aplus}"
+sudo mkdir -p /etc/aplus
+sudo touch /var/log/aplus-encoder.log /var/log/aplus-meta.log /var/log/aplus-backfill.log /var/log/aplus-train.log || true
 sudo cp "${DEST}/ops/systemd/"*.service /etc/systemd/system/
 sudo cp "${DEST}/ops/systemd/"*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now trad-encoder.timer trad-meta.timer trad-backfill.timer trad-train.timer
+sudo systemctl enable --now aplus-encoder.timer aplus-meta.timer aplus-backfill.timer aplus-train.timer
 EOF
 
 echo "[deploy] installing logrotate config"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/trad}"
-sudo cp "${DEST}/ops/logrotate/trad" /etc/logrotate.d/trad
+DEST="${DEST:-/srv/aplus}"
+sudo cp "${DEST}/ops/logrotate/aplus" /etc/logrotate.d/aplus
 EOF
 
 echo "[deploy] setting up python virtual environment"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/trad}"
+DEST="${DEST:-/srv/aplus}"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 sudo apt-get update
 sudo apt-get install -y python3-venv

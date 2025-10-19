@@ -16,8 +16,8 @@ def _load_env():
   candidates = [
     Path("config/.env"),
     Path(__file__).resolve().parent.parent / "config/.env",
-    Path("/etc/trad/.env"),
-    Path("/etc/trad/trad.env"),
+    Path("/etc/aplus/.env"),
+    Path("/etc/aplus/aplus.env"),
   ]
   for c in candidates:
     if c.exists():
@@ -33,9 +33,9 @@ def get_db_conn(host=None, port=None, name=None, user=None, password=None):
     """Create a psycopg2 connection using env vars or provided arguments."""
     host = host or os.getenv("DB_HOST", "127.0.0.1") # Default to IPv4 loopback
     port = port or int(os.getenv("DB_PORT", "5432"))
-    name = name or os.getenv("DB_NAME", "trad")
-    user = user or os.getenv("DB_USER", "traduser")
-    password = password or os.getenv("DB_PASSWORD")
+    name = name or os.getenv("DB_NAME", "aplus")
+    user = user or os.getenv("DB_USER", "aplususer")
+    password = password or os.getenv("DB_PASSWORD", "APLUS123!")
 
     if not password:
         raise ValueError("DB_PASSWORD is not set.")
@@ -51,13 +51,6 @@ def get_db_conn(host=None, port=None, name=None, user=None, password=None):
     )
     conn.autocommit = True
     return conn
-    password = password or os.getenv("DB_PASSWORD", "tradpassword")
-
-    conn = psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=name,
-        user=user,
         password=password,
         cursor_factory=psycopg2.extras.RealDictCursor,
     )

@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the Aplus Apluser
+Wants=network-online.target
+After=network-online.target aplus-auditor.service
+
+[Service]
+ExecStart=/srv/aplus/.venv/bin/python /srv/aplus/ops/scripts/run_apluser.py --symbol BTC/USDT
+WorkingDirectory=/srv/aplus
+Restart=on-failure
+User=root
+Group=root
+EnvironmentFile=/etc/aplus/aplus.env
+
+[Install]
+WantedBy=multi-user.target

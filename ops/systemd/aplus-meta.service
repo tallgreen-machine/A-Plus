@@ -1,17 +1,17 @@
 [Unit]
-Description=Trad Meta-Controller
+Description=Aplus Meta-Controller
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/trad/trad.env
-WorkingDirectory=/srv/trad
+EnvironmentFile=/etc/aplus/aplus.env
+WorkingDirectory=/srv/aplus
 ExecStart=/usr/bin/python3 -m meta_controller.run_metacontroller
 Restart=on-failure
 RestartSec=5
-StandardOutput=append:/var/log/trad-meta.log
-StandardError=append:/var/log/trad-meta.log
+StandardOutput=append:/var/log/aplus-meta.log
+StandardError=append:/var/log/aplus-meta.log
 
 [Install]
 WantedBy=multi-user.target
