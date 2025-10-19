@@ -7,6 +7,7 @@ from utils.logger import log
 from strategies.htf_sweep import HTFSweep
 from strategies.volume_breakout import VolumeBreakout
 from strategies.divergence_capitulation import DivergenceCapitulation
+from strategies.audited_pattern_strategy import AuditedPatternStrategy
 
 class SignalLibrary:
     def __init__(self, event_bus: EventBus, symbols: list):
@@ -16,6 +17,7 @@ class SignalLibrary:
 
         # Register the strategies to be used
         self.strategies = [
+            AuditedPatternStrategy, # Check for high-conviction, audited patterns first
             HTFSweep,
             VolumeBreakout,
             DivergenceCapitulation

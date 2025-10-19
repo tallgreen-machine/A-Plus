@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the Trad Trader
+Wants=network-online.target
+After=network-online.target trad-auditor.service
+
+[Service]
+ExecStart=/srv/trad/.venv/bin/python /srv/trad/ops/scripts/run_trader.py --symbol BTC/USDT
+WorkingDirectory=/srv/trad
+Restart=on-failure
+User=root
+Group=root
+EnvironmentFile=/etc/trad/trad.env
+
+[Install]
+WantedBy=multi-user.target

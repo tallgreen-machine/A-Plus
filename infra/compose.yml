@@ -1,0 +1,22 @@
+version: '3.9'
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: aplus_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aplususer
+      POSTGRES_PASSWORD: "APLUS123!"
+      POSTGRES_DB: aplus
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aplususer -d aplus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+volumes:
+  db_data:

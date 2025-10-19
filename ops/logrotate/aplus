@@ -1,0 +1,16 @@
+/var/log/aplus-*.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    create 0644 root root
+    dateext
+    sharedscripts
+    postrotate
+        systemctl kill -s HUP --kill-who=main aplus-encoder.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main aplus-meta.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main aplus-backfill.service 2>/dev/null || true
+        systemctl kill -s HUP --kill-who=main aplus-train.service 2>/dev/null || true
+    endscript
+}
