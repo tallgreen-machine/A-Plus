@@ -1,6 +1,8 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import json
+from pathlib import Path
 from typing import Dict, Any
 
 from shared.db import get_db_conn
@@ -14,10 +16,13 @@ class CryptoTradingEnv(gym.Env):
         self.symbols = symbols
         self.window = window
         self.n_assets = len(symbols)
+        self._active_patterns = self._load_active_patterns()
+        self.known_patterns = ['Liquidity Sweep']  # A registry of all possible patterns
 
-        # Observations: embeddings per asset (128 each), position weights per asset, cash, regime one-hot (3), conviction (1)
+        # Observations: embeddings, weights, cash, regime, conviction, active_patterns
         emb_dim = 128
-        obs_dim = self.n_assets * emb_dim + self.n_assets + 1 + 3 + 1
+        patterns_dim = len(self.known_patterns)
+        obs_dim = self.n_assets * emb_dim + self.n_assets + 1 + 3 + 1 + patterns_dim
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
         # Action: target weights per asset in [0,1]; residual goes to cash (long-only)
@@ -28,6 +33,24 @@ class CryptoTradingEnv(gym.Env):
         self._cash = 1.0
         self._last_obs = None
 
+    def _load_active_patterns(self):
+        """Loads the active patterns from the JSON file."""
+        active_patterns_path = Path('active_patterns.json')
+        if not active_patterns_path.exists():
+            print("Warning: active_patterns.json not found. No patterns will be used.")
+            return []
+        try:
+            with open(active_patterns_path, 'r') as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            print("Warning: active_patterns.json is empty or malformed. No patterns will be used.")
+            return []
+
+    def _get_pattern_features(self) -> np.ndarray:
+        """Creates a binary vector indicating which known patterns are active."""
+        active_pattern_names = {p['name'] for p in self._active_patterns}
+        return np.array([1.0 if name in active_pattern_names else 0.0 for name in self.known_patterns], dtype=np.float32)
+
     def _fetch_latest_embedding(self, symbol: str):
         def _coerce_embedding(x):
             try:
@@ -37,8 +60,6 @@ class CryptoTradingEnv(gym.Env):
                 elif isinstance(x, str):
                     s = x.strip()
                     # Try JSON first
-                    import json
-
                     try:
                         arr = np.array(json.loads(s), dtype=np.float32)
                     except Exception:
@@ -153,13 +174,18 @@ class CryptoTradingEnv(gym.Env):
         for sym in self.symbols:
             embs.append(self._fetch_latest_embedding(sym))
         embs_vec = np.concatenate(embs, dtype=np.float32) if embs else np.zeros(128, dtype=np.float32)
+        
         regime_one_hot, conviction = self._fetch_market_state()
+
+        pattern_features = self._get_pattern_features()
+
         obs = np.concatenate([
             embs_vec,
             self._weights.astype(np.float32),
             np.array([self._cash], dtype=np.float32),
             regime_one_hot.astype(np.float32),
             np.array([conviction], dtype=np.float32),
+            pattern_features.astype(np.float32),
         ], dtype=np.float32)
         return obs
 

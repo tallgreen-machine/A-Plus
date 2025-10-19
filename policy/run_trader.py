@@ -16,7 +16,7 @@ def main():
     symbols = ["BTC/USDT", "ETH/USDT"]
     env = CryptoTradingEnv(symbols=symbols, window=200)
     # Load model relative to this file's directory
-    model_path = Path(__file__).resolve().parent / "models" / "ppo_trader"
+    model_path = Path(__file__).resolve().parent / "models" / "ppo_pattern_aware_trader"
     model = PPO.load(str(model_path))
 
     obs, _ = env.reset()

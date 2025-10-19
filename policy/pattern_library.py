@@ -9,7 +9,7 @@ class Tier1Patterns:
     the pattern is detected RIGHT NOW.
     """
 
-    def __init__(self, symbol="BTC/USD"):
+    def __init__(self, symbol="BTC/USDT"):
         self.symbol = symbol
         self.db_conn = get_db_conn()
 
@@ -78,6 +78,122 @@ class Tier1Patterns:
             return {'pattern_name': 'Liquidity Sweep', 'confidence': 0.71, 'details': {'price': last_candle['close'], 'liquidity_level': liquidity_level}}
         
         return None
+
+    def check_for_fair_value_gap(self):
+        """
+        Identifies a Fair Value Gap (FVG), which is a three-candle pattern indicating an imbalance.
+        - A bullish FVG is when the low of the third candle is higher than the high of the first candle.
+        - We look for a recent FVG that has not yet been filled.
+        """
+        df = self.fetch_recent_data(limit=20)
+        if len(df) < 5:
+            return None
+
+        # Look for a bullish FVG in the last 15 candles
+        for i in range(len(df) - 3, len(df) - 18, -1):
+            if i < 2: continue
+            
+            c1, c2, c3 = df.iloc[i-2], df.iloc[i-1], df.iloc[i]
+
+            # Check for a bullish FVG
+            is_bullish_fvg = c3['low'] > c1['high']
+            
+            if is_bullish_fvg:
+                fvg_top = c3['low']
+                fvg_bottom = c1['high']
+                
+                # Check if the FVG has been filled by subsequent candles
+                is_filled = False
+                for j in range(i + 1, len(df)):
+                    if df.iloc[j]['low'] <= fvg_bottom:
+                        is_filled = True
+                        break
+                
+                if not is_filled:
+                    print(f"FAIR VALUE GAP DETECTED on {self.symbol} at {c3['ts']}")
+                    return {
+                        'pattern_name': 'Fair Value Gap',
+                        'confidence': 0.65,
+                        'details': {
+                            'price': c3['close'],
+                            'fvg_top': fvg_top,
+                            'fvg_bottom': fvg_bottom
+                        }
+                    }
+        return None
+
+    def detect_fair_value_gap(self, df):
+        """
+        Scans the entire historical dataframe to find all occurrences of a Fair Value Gap (FVG).
+        Returns a list of (timestamp, price) tuples for each bullish FVG occurrence.
+        """
+        occurrences = []
+        if len(df) < 3:
+            return occurrences
+
+        for i in range(2, len(df)):
+            c1, c2, c3 = df.iloc[i-2], df.iloc[i-1], df.iloc[i]
+
+            # Bullish FVG: The low of candle 3 is higher than the high of candle 1
+            is_bullish_fvg = c3['low'] > c1['high']
+
+            if is_bullish_fvg:
+                # We consider the pattern valid at the close of the 3rd candle
+                # The entry price would be the closing price of that candle
+                occurrences.append((c3['ts'], c3['close']))
+        
+        return occurrences
+
+    def detect_liquidity_sweep(self, df):
+        """
+        Scans the entire historical dataframe to find all occurrences of the liquidity sweep pattern.
+        This is used for backtesting by the Reliability Engine.
+        Returns a list of (timestamp, price) tuples for each occurrence.
+        """
+        occurrences = []
+        if len(df) < 50:
+            return occurrences
+
+        # Use a rolling window to check for the pattern across the dataset
+        for i in range(40, len(df) - 1):
+            # Window of 41 candles to check pattern at candle `i`. 
+            # The last candle in the window is the one we're evaluating.
+            window = df.iloc[i-41:i+1] 
+            
+            # 1. Find a liquidity pool in the 40 candles *before* the current one.
+            analysis_window = window.iloc[:-1]
+            min_low_val = analysis_window['low'].min()
+            
+            # Find lows that are very close to the minimum low
+            liquidity_pool_lows = analysis_window['low'][abs(analysis_window['low'] - min_low_val) / min_low_val < 0.001]
+
+            if len(liquidity_pool_lows) < 2:
+                continue
+
+            liquidity_level = liquidity_pool_lows.min() # This should be a float
+
+            # 2. Check for a sharp move that takes the liquidity
+            # The sweep candle is the last candle in our window.
+            sweep_candle = window.iloc[-1]
+            
+            if sweep_candle['low'] > liquidity_level:
+                continue
+
+            # 3. Check for a strong reversal (bullish engulfing)
+            # The candle before the sweep candle is used for engulfing check.
+            reversal_candle = window.iloc[-2]
+            is_engulfing = (reversal_candle['close'] > sweep_candle['open'] and
+                            reversal_candle['open'] < sweep_candle['close'] and
+                            reversal_candle['close'] > reversal_candle['open']) # Is a green candle
+
+            if is_engulfing:
+                # Pattern is confirmed at the close of the reversal candle.
+                # This is the entry point for our simulated trade.
+                entry_ts = reversal_candle['ts']
+                entry_price = reversal_candle['close']
+                occurrences.append((entry_ts, entry_price))
+        
+        return occurrences
 
     def check_for_capitulation_volume(self):
         """

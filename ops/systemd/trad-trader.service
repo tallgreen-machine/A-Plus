@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target trad-auditor.service
 
 [Service]
-ExecStart=/usr/bin/python3 /srv/trad/ops/scripts/run_trader.py --symbol BTC/USDT
+ExecStart=/srv/trad/.venv/bin/python /srv/trad/ops/scripts/run_trader.py --symbol BTC/USDT
 WorkingDirectory=/srv/trad
 Restart=on-failure
 User=root

@@ -18,6 +18,7 @@ echo "[deploy] syncing repository to ${SSH_USER}@${SERVER}:${DEST}"
 ssh -o StrictHostKeyChecking=accept-new "${SSH_USER}@${SERVER}" "mkdir -p '${DEST}'"
 rsync -az --delete \
   --exclude '.git/' \
+  --exclude '.venv/' \
   --exclude '__pycache__/' \
   ./ "${SSH_USER}@${SERVER}:${DEST}/"
 
@@ -48,15 +49,21 @@ DEST="${DEST:-/srv/trad}"
 sudo cp "${DEST}/ops/logrotate/trad" /etc/logrotate.d/trad
 EOF
 
-echo "[deploy] ensuring minimal Python runtime deps (idempotent)"
+echo "[deploy] setting up python virtual environment"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
+DEST="${DEST:-/srv/trad}"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
-if command -v pip3 >/dev/null 2>&1; then :; else sudo apt-get update && sudo apt-get install -y python3-pip python3-dotenv; fi
-pip3 install --break-system-packages --root-user-action=ignore --no-cache-dir \
-  torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu || true
-pip3 install --break-system-packages --root-user-action=ignore --no-cache-dir \
-  gymnasium==0.29.1 stable-baselines3>=2.5 psycopg2-binary cloudpickle farama-notifications || true
+sudo apt-get update
+sudo apt-get install -y python3-venv
+
+# Create venv
+python3 -m venv "${DEST}/.venv"
+
+# Install dependencies
+"${DEST}/.venv/bin/pip" install --extra-index-url https://download.pytorch.org/whl/cpu -r "${DEST}/encoder/requirements.txt"
+"${DEST}/.venv/bin/pip" install -r "${DEST}/meta_controller/requirements.txt"
+"${DEST}/.venv/bin/pip" install --extra-index-url https://download.pytorch.org/whl/cpu -r "${DEST}/policy/requirements.txt"
 EOF
 
 echo "[deploy] running health check"

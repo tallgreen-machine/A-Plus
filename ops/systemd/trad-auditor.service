@@ -4,7 +4,7 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 /srv/trad/ops/scripts/run_auditor.py
+ExecStart=/srv/trad/.venv/bin/python /srv/trad/ops/scripts/run_auditor.py
 WorkingDirectory=/srv/trad
 Restart=on-failure
 User=root
