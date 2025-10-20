@@ -1,6 +1,6 @@
 # Server Connection Guide
 
-This document provides a complete technical description of the current, working SSH configuration used to connect the VS Code dev container to the `aplus` server.
+This document provides a complete technical description of the current, working SSH configuration used to connect the VS Code dev container to the `trad` server.
 
 ## Connection Details
 

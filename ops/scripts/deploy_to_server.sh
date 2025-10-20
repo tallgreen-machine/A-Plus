@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # Usage:
-#   SERVER=1.2.3.4 SSH_USER=root DEST=/srv/aplus ./ops/scripts/deploy_to_server.sh
+#   SERVER=1.2.3.4 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
 # Requires: ssh, rsync, sudo on remote (or SSH_USER=root)
 
 SERVER="${SERVER:-}"
 SSH_USER="${SSH_USER:-root}"
-DEST="${DEST:-/srv/aplus}"
+DEST="${DEST:-/srv/trad}"
 
 if [[ -z "$SERVER" ]]; then
   echo "SERVER env var is required (IP or hostname)" >&2
@@ -25,47 +25,47 @@ rsync -az --delete \
 echo "[deploy] installing environment config"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
-sudo mkdir -p /etc/aplus
-sudo cp "${DEST}/config/aplus.env" /etc/aplus/aplus.env
+DEST="${DEST:-/srv/trad}"
+sudo mkdir -p /etc/trad
+sudo cp "${DEST}/config/trad.env" /etc/trad/trad.env
 EOF
 
 echo "[deploy] installing systemd units"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
+DEST="${DEST:-/srv/trad}"
 
 # Stop and disable services to ensure a clean start
-sudo systemctl stop aplus.service || true
-sudo systemctl disable aplus.service || true
+sudo systemctl stop trad.service || true
+sudo systemctl disable trad.service || true
 sudo systemctl stop dashboard.service || true
 sudo systemctl disable dashboard.service || true
 
 # Main bot service
-sudo mkdir -p /etc/aplus
-sudo touch /var/log/aplus.log || true
-sudo cp "${DEST}/ops/systemd/aplus.service" /etc/systemd/system/
+sudo mkdir -p /etc/trad
+sudo touch /var/log/trad.log || true
+sudo cp "${DEST}/ops/systemd/trad.service" /etc/systemd/system/
 
 # Dashboard service
-sudo touch /var/log/aplus-dashboard.log || true
+sudo touch /var/log/trad-dashboard.log || true
 sudo cp "${DEST}/ops/systemd/dashboard.service" /etc/systemd/system/
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now aplus.service
+sudo systemctl enable --now trad.service
 # The dashboard service will be started after its venv is set up.
 EOF
 
 echo "[deploy] installing logrotate config"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
-sudo cp "${DEST}/ops/logrotate/aplus" /etc/logrotate.d/aplus
+DEST="${DEST:-/srv/trad}"
+sudo cp "${DEST}/ops/logrotate/trad" /etc/logrotate.d/trad
 EOF
 
 echo "[deploy] setting up python virtual environments"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
+DEST="${DEST:-/srv/trad}"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export DEBIAN_FRONTEND=noninteractive
 
@@ -84,46 +84,53 @@ python3 -m venv "${DEST}/dashboard/.venv"
 "${DEST}/dashboard/.venv/bin/pip" install -r "${DEST}/dashboard/requirements.txt"
 EOF
 
+echo "[deploy] checking postgres authentication config"
+ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
+set -euo pipefail
+echo "--- pg_hba.conf contents ---"
+HBA_FILE=$(sudo -u postgres psql -t -P format=unaligned -c 'show hba_file')
+sudo cat "$HBA_FILE"
+echo "--- end of pg_hba.conf ---"
+EOF
+
 echo "[deploy] initializing database and starting dashboard"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
+DEST="${DEST:-/srv/trad}"
 
 # Source the environment file to get DB credentials
-if [ -f /etc/aplus/aplus.env ]; then
-    set -a
-    . /etc/aplus/aplus.env
-    set +a
+if [ ! -f /etc/trad/trad.env ]; then
+    echo "/etc/trad/trad.env not found. Exiting."
+    exit 1
 fi
 
-# Run the SQL script to create tables if they don't exist
-psql -h "${DB_HOST}" -U "${DB_USER}" -d "${DB_NAME}" -f "${DEST}/sql/dashboard_init.sql"
+# Isolate credential handling and database command in a subshell
+(
+    set -a
+    source /etc/trad/trad.env
+    set +a
+
+    # Debugging output
+    echo "DB_HOST: ${DB_HOST:-'not set'}"
+    echo "DB_USER: ${DB_USER:-'not set'}"
+    echo "DB_NAME: ${DB_NAME:-'not set'}"
+    echo "DB_PASSWORD length: ${#DB_PASSWORD}"
+
+    # Run the database initialization SQL with the password set directly
+    echo "Attempting to connect to database..."
+    PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -a -f "${DEST}/sql/dashboard_init.sql"
+)
 
 # Start the dashboard service
-sudo systemctl enable --now dashboard.service
+sudo systemctl restart dashboard.service
+echo "Dashboard service restarted."
 EOF
 
-echo "[deploy] configuring caddy reverse proxy"
+echo "[deploy] restarting trad service"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-DEST="${DEST:-/srv/aplus}"
-
-# Source the environment file to get dashboard credentials
-if [ -f /etc/aplus/aplus.env ]; then
-    set -a
-    . /etc/aplus/aplus.env
-    set +a
-fi
-
-# The DASHBOARD_PASSWORD_HASH is already hashed and in the env file.
-# It must be passed directly to the ssh command.
-envsubst '' < "${DEST}/ops/caddy/Caddyfile" | sudo tee /etc/caddy/Caddyfile > /dev/null
-
-# Reload Caddy to apply the new config
-sudo systemctl reload caddy
+sudo systemctl restart trad.service
+echo "Trad service restarted."
 EOF
 
-echo "[deploy] running health check"
-ssh "${SSH_USER}@${SERVER}" "bash '${DEST}/ops/scripts/health_check.sh'" || true
-
-echo "[deploy] done"
+echo "[deploy] complete"

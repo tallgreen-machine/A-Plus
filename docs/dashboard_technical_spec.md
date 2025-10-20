@@ -1,8 +1,8 @@
-# A-Plus Trading Bot Dashboard: Technical Specification
+# Trad Trading Bot Dashboard: Technical Specification
 
 ## 1. Overview
 
-This document outlines the technical functionality and API endpoints for the A-Plus Trading Bot's web dashboard. The purpose of this dashboard is to provide a real-time monitoring and control interface for the automated trading bot.
+This document outlines the technical functionality and API endpoints for the Trad Trading Bot's web dashboard. The purpose of this dashboard is to provide a real-time monitoring and control interface for the automated trading bot.
 
 The dashboard is a Flask web application that communicates with the bot's backend services and its PostgreSQL database.
 
@@ -53,19 +53,19 @@ The current dashboard provides a simple, real-time view of the bot's status. The
 ### **GET `/api/logs`**
 
 -   **Function:** Retrieves the last 100 lines from the bot's main log file for real-time debugging.
--   **Data Source:** Reads from `/var/log/aplus.log` on the server.
+-   **Data Source:** Reads from `/var/log/trad.log` on the server.
 -   **JSON Response Example:**
     ```json
     [
-      "INFO:A-Plus:Starting A-Plus Trading Bot...",
-      "INFO:A-Plus:Next candle in 59.8s. Sleeping for 61.8s."
+      "INFO:Trad:Starting Trad Trading Bot...",
+      "INFO:Trad:Next candle in 59.8s. Sleeping for 61.8s."
     ]
     ```
 
 ### **GET & POST `/api/config`**
 
 -   **Function:** Allows reading and updating the bot's configuration. Currently, it only manages the `TIMEFRAMES` setting. A `POST` request to this endpoint will automatically restart the bot service to apply the changes.
--   **Data Source:** Reads from and writes to `/etc/aplus/aplus.env` on the server.
+-   **Data Source:** Reads from and writes to `/etc/trad/trad.env` on the server.
 -   **GET Response Example:**
     ```json
     {
@@ -120,7 +120,7 @@ To create a more powerful and intuitive interface, we recommend the following fe
 ### **3.4. Bot Status Indicator**
 
 -   **Concept:** A clear, unambiguous status indicator (e.g., a colored dot or text) that shows whether the bot service is `RUNNING`, `STOPPED`, or has `FAILED`.
--   **Implementation:** This would require a new endpoint, `GET /api/status`, that runs `systemctl status aplus.service` on the server and parses the output.
+-   **Implementation:** This would require a new endpoint, `GET /api/status`, that runs `systemctl status trad.service` on the server and parses the output.
 
 ## 4. Summary for the Designer
 

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from shared.db import get_db_conn
 
 # Load environment variables
-env_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'aplus.env')
+env_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'trad.env')
 load_dotenv(dotenv_path=env_path)
 
 app = Flask(__name__)
@@ -45,7 +45,7 @@ def index():
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def manage_config():
-    config_path = '/etc/aplus/aplus.env'
+    config_path = '/etc/trad/trad.env'
     if request.method == 'POST':
         try:
             data = request.get_json()
@@ -66,7 +66,7 @@ def manage_config():
                         f.write(line)
             
             # Restart the bot
-            subprocess.run(['sudo', 'systemctl', 'restart', 'aplus.service'], check=True)
+            subprocess.run(['sudo', 'systemctl', 'restart', 'trad.service'], check=True)
             
             return jsonify({'success': True})
         except Exception as e:
@@ -117,7 +117,7 @@ def get_trades():
 @app.route('/api/logs')
 def get_logs():
     try:
-        with open('/var/log/aplus.log', 'r') as f:
+        with open('/var/log/trad.log', 'r') as f:
             logs = f.readlines()
         return jsonify(logs[-100:]) # Return last 100 lines
     except FileNotFoundError:

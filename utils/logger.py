@@ -5,7 +5,7 @@ def setup_logger():
     """
     Sets up a centralized logger for the application.
     """
-    logger = logging.getLogger('APlus')
+    logger = logging.getLogger('Trad')
     logger.setLevel(logging.INFO)
 
     # Create a formatter

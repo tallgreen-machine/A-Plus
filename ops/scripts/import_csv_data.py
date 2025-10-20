@@ -28,11 +28,11 @@ if __name__ == "__main__":
     print("Importing market data from CSV...")
     
     # Load environment variables from the server's config file
-    if os.path.exists("/etc/aplus/aplus.env"):
-        load_dotenv("/etc/aplus/aplus.env", override=True)
+    if os.path.exists("/etc/trad/trad.env"):
+        load_dotenv("/etc/trad/trad.env", override=True)
 
     conn = get_db_conn()
     
-    import_data_from_csv("/srv/aplus/market_data.csv", conn)
+    import_data_from_csv("/srv/trad/market_data.csv", conn)
     conn.close()
     print("Import complete.")

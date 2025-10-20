@@ -33,10 +33,10 @@ def main():
     """
     Main function to run the trading bot.
     """
-    log.info("Starting A-Plus Trading Bot...")
+    log.info("Starting Trad Trading Bot...")
     
     # Load environment variables from .env file
-    env_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'aplus.env')
+    env_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'trad.env')
     load_dotenv(dotenv_path=env_path)
     log.info(f"Loaded environment from {env_path}")
 
@@ -95,7 +95,7 @@ def main():
     except Exception as e:
         log.error(f"An unexpected error occurred: {e}", exc_info=True)
     finally:
-        log.info("A-Plus Trading Bot shutting down.")
+        log.info("Trad Trading Bot shutting down.")
         if db_conn:
             db_conn.close()
             log.info("Database connection closed.")
