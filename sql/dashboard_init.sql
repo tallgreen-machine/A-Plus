@@ -20,6 +20,17 @@ CREATE TABLE IF NOT EXISTS portfolio_history (
     equity DOUBLE PRECISION NOT NULL
 );
 
+-- Ensure historic deployments have the wallet_id column (idempotent)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='portfolio_history' AND column_name='wallet_id'
+    ) THEN
+        ALTER TABLE portfolio_history ADD COLUMN IF NOT EXISTS wallet_id VARCHAR(255) NOT NULL DEFAULT 'unknown';
+    END IF;
+END$$;
+
 -- Symbol status table: tracks whether a requested symbol is available
 CREATE TABLE IF NOT EXISTS symbol_status (
     id SERIAL PRIMARY KEY,

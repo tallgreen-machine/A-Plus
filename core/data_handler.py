@@ -265,7 +265,7 @@ class DataHandler:
         for symbol in self.symbols:
             if symbol in self.unsupported_symbols:
                 continue
-            exchange = self._get_exchange_for_symbol(symbol)
+            exchange = self.get_exchange_for_symbol(symbol)
             if not exchange:
                 log.warning(f"No exchange found for symbol {symbol} in update_data. Skipping.")
                 continue
