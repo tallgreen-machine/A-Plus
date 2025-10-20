@@ -3,6 +3,7 @@
 import ccxt
 import pandas as pd
 import time
+import json
 from typing import Dict, List
 
 from core.event_system import EventBus, MarketEvent
