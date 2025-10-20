@@ -123,5 +123,19 @@ def get_logs():
     except FileNotFoundError:
         return jsonify(["Log file not found."]), 404
 
+
+@app.route('/api/symbol_status')
+def symbol_status():
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT symbol, status, reason, last_checked FROM symbol_status ORDER BY symbol")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify([dict(r) for r in rows])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)

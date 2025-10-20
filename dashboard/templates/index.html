@@ -56,6 +56,7 @@
         }
 
         setInterval(fetchData, 5000); // Refresh every 5 seconds
+    setInterval(fetchSymbolStatus, 10000); // Refresh symbol status every 10s
         
         function getConfig() {
             fetch('/api/config')
@@ -99,8 +100,29 @@
         window.onload = function() {
             fetchData();
             getConfig();
+            fetchSymbolStatus();
             document.getElementById('save-config').addEventListener('click', saveConfig);
         };
+        
+        function fetchSymbolStatus() {
+            fetch('/api/symbol_status')
+                .then(resp => resp.json())
+                .then(data => {
+                    const el = document.getElementById('symbol-status-body');
+                    if (!el) return;
+                    el.innerHTML = '';
+                    data.forEach(row => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td class="py-2 px-4">${row.symbol}</td>
+                            <td class="py-2 px-4">${row.status}</td>
+                            <td class="py-2 px-4">${row.reason || ''}</td>
+                            <td class="py-2 px-4">${row.last_checked ? new Date(row.last_checked).toLocaleString() : ''}</td>
+                        `;
+                        el.appendChild(tr);
+                    });
+                }).catch(()=>{});
+        }
     </script>
 </head>
 <body class="bg-gray-900 text-white font-sans">
@@ -165,6 +187,24 @@
                 </thead>
                 <tbody id="trades-body">
                     <!-- Trades will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Symbol Status -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-8">
+            <h2 class="text-2xl font-bold mb-4">Symbol Availability</h2>
+            <table class="w-full">
+                <thead>
+                    <tr class="text-left text-gray-400">
+                        <th class="py-2 px-4">Symbol</th>
+                        <th class="py-2 px-4">Status</th>
+                        <th class="py-2 px-4">Reason</th>
+                        <th class="py-2 px-4">Last Checked</th>
+                    </tr>
+                </thead>
+                <tbody id="symbol-status-body">
+                    <tr><td colspan="4">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
