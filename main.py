@@ -97,6 +97,9 @@ def main():
         log.info("Trad Trading Bot shutting down.")
         if db_conn:
             db_conn.close()
-			
+            log.info("Database connection closed.")
+        log.info("Main function finished.")
+
 if __name__ == "__main__":
     main()
+    log.info("Script has finished executing.")
