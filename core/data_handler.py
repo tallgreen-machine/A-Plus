@@ -207,11 +207,19 @@ class DataHandler:
         a MarketEvent if it's new.
         """
         for symbol in self.symbols:
+            exchange = self._get_exchange_for_symbol(symbol)
+            if not exchange:
+                log.warning(f"No exchange found for symbol {symbol} in update_data. Skipping.")
+                continue
+
             for timeframe in self.timeframes:
                 key = f"{symbol}_{timeframe}"
                 try:
                     # Fetch the most recent 2 candles to be safe
-                    ohlcv = self._exchange.fetch_ohlcv(symbol, timeframe, limit=2)
+                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=2)
+                    if not ohlcv:
+                        continue
+                    
                     latest_candle = ohlcv[-1]
                     latest_timestamp = latest_candle[0] // 1000 # Convert ms to seconds
                     

@@ -102,7 +102,8 @@ class ExecutionCore:
         self.event_bus = event_bus
         self.data_handler = data_handler
         self.wallets = self._load_wallets(wallets_config_path)
-        self.portfolios = {w['wallet_id']: Portfolio(wallet_id=w['wallet_id']) for w in self.wallets}
+        self.portfolios = {w['wallet_id']: Portfolio(wallet_id=w['wallet_id'], initial_cash=w.get('initial_cash', 100000.0)) for w in self.wallets}
+        self.db_conn = get_db_conn()
 
         self.event_bus.subscribe(SignalEvent, self.on_signal)
         self.event_bus.subscribe(FillEvent, self.on_fill)
@@ -113,10 +114,14 @@ class ExecutionCore:
         if not os.path.exists(path):
             log.error(f"Wallets config file not found at '{path}'.")
             return []
-        with open(path, 'r') as f:
-            wallets = json.load(f)
-        log.info(f"Loaded {len(wallets)} wallets from '{path}'.")
-        return wallets
+        try:
+            with open(path, 'r') as f:
+                wallets = json.load(f)
+            log.info(f"Loaded {len(wallets)} wallets from '{path}'.")
+            return wallets
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            log.error(f"Error loading or parsing wallets.json: {e}")
+            return []
 
     def on_signal(self, signal: SignalEvent):
         """Handles a signal event by generating orders for all configured wallets."""
@@ -124,10 +129,20 @@ class ExecutionCore:
 
         for wallet_config in self.wallets:
             wallet_id = wallet_config['wallet_id']
-            portfolio = self.portfolios[wallet_id]
+            portfolio = self.portfolios.get(wallet_id)
 
-            # Simple risk management: calculate order size as a percentage of cash
+            if not portfolio:
+                log.warning(f"No portfolio found for wallet_id: {wallet_id}. Skipping order generation.")
+                continue
+
+            # Risk management: calculate order size as a percentage of cash
             trade_allocation = wallet_config.get('trade_allocation', 0.01) # Default to 1%
+            
+            # Use the price from the signal to calculate quantity
+            if signal.price <= 0:
+                log.warning(f"Signal price for {signal.symbol} is invalid ({signal.price}). Cannot calculate order size.")
+                continue
+                
             order_quantity = (portfolio.cash * trade_allocation) / signal.price
 
             if order_quantity > 0:
@@ -144,58 +159,10 @@ class ExecutionCore:
     def on_fill(self, fill: FillEvent):
         """Handles a fill event by updating the corresponding portfolio and recording the trade."""
         if fill.wallet_id in self.portfolios:
-            # Update the specific portfolio that this fill belongs to
             self.portfolios[fill.wallet_id].update_on_fill(fill)
-            self.record_trade(fill)
+            self._log_fill_to_db(fill)
         else:
             log.warning(f"Received fill for unknown wallet_id: {fill.wallet_id}")
-
-    def record_trade(self, fill: FillEvent):
-        """Saves the details of an executed trade to the database."""
-        try:
-            with get_db_conn() as conn:
-                with conn.cursor() as cur:
-                    # This is a simplified insertion. We assume a new trade for each fill.
-                    # A more robust implementation would handle opening and closing trades.
-                    cur.execute(
-                        """
-                        INSERT INTO trades (wallet_id, pattern_name, symbol, entry_time, entry_price, trade_type, pnl_percentage)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (
-                            fill.wallet_id,
-                            'UNKNOWN', # We need to get this from the signal
-                            fill.symbol,
-                            fill.timestamp,
-                            fill.price,
-                            fill.direction,
-                            0 # PnL is calculated on closing the trade
-                        )
-                    )
-            log.info(f"Recorded trade for wallet '{fill.wallet_id}' in database.")
-        except Exception as e:
-            log.error(f"Failed to record trade in database: {e}")
-
-    def __init__(self, event_bus: EventBus, portfolio: Portfolio, risk_per_trade=0.01):
-        self.event_bus = event_bus
-        self.portfolio = portfolio
-        self.risk_per_trade = risk_per_trade
-        self.db_conn = get_db_conn()
-        
-        self.event_bus.subscribe(SignalEvent, self.on_signal)
-        # The portfolio is now updated by the ExecutionCore, which also handles DB logging
-        self.event_bus.subscribe(FillEvent, self.on_fill)
-        log.info("ExecutionCore initialized and subscribed to SignalEvent and FillEvent.")
-
-    def on_fill(self, fill: FillEvent):
-        """Handles a fill event, updates the portfolio, and logs the trade to the DB."""
-        log.info(f"ExecutionCore received FillEvent: {fill.direction} {fill.quantity} {fill.symbol} @ {fill.price}")
-        
-        # 1. Update portfolio state
-        self.portfolio.update_on_fill(fill)
-        
-        # 2. Log trade to database
-        self._log_fill_to_db(fill)
 
     def _log_fill_to_db(self, fill: FillEvent):
         """Saves a trade record to the 'trades' table."""
@@ -206,8 +173,8 @@ class ExecutionCore:
             with self.db_conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO trades (timestamp, symbol, exchange, quantity, direction, price, fill_cost, commission)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO trades (timestamp, symbol, exchange, quantity, direction, price, fill_cost, commission, wallet_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         fill.timestamp,
@@ -218,61 +185,9 @@ class ExecutionCore:
                         fill.price,
                         fill.fill_cost,
                         fill.commission,
+                        fill.wallet_id,
                     ),
                 )
-            # The connection from get_db_conn is in autocommit mode, so this is redundant
-            # self.db_conn.commit() 
-            log.info(f"Successfully logged trade for {fill.symbol} to database.")
+            log.info(f"Successfully logged trade for {fill.symbol} (Wallet: {fill.wallet_id}) to database.")
         except Exception as e:
             log.error(f"Database error while logging fill: {e}", exc_info=True)
-            # self.db_conn.rollback() # Redundant with autocommit
-
-    def on_signal(self, signal: SignalEvent):
-        """
-        Handles a signal event and generates an order if appropriate.
-        """
-        log.info(f"ExecutionCore received signal: {signal.strategy_id} for {signal.symbol}")
-        
-        # 1. Calculate order size based on risk
-        order_quantity = self.calculate_order_size(signal)
-        if order_quantity <= 0:
-            log.warning(f"Order size is zero or negative ({order_quantity}). No order will be placed.")
-            return
-
-        # 2. Create OrderEvent
-        order = OrderEvent(
-            symbol=signal.symbol,
-            order_type='MARKET', # Or 'LIMIT'
-            direction=signal.signal_type,
-            quantity=order_quantity
-        )
-
-        # 3. Publish OrderEvent
-        self.event_bus.publish(order)
-        log.info(f"ExecutionCore published OrderEvent: {order.direction} {order.quantity:.4f} {order.symbol}")
-
-
-    def calculate_order_size(self, signal: SignalEvent) -> float:
-        """
-        Calculates the size of the order based on the portfolio's equity and the signal's risk parameters.
-        
-        :return: The quantity of the asset to buy/sell.
-        """
-        if signal.stop_loss is None:
-            log.warning("No stop loss defined for signal. Cannot calculate risk-based position size.")
-            return 0.0
-
-        # Total amount to risk on this trade
-        amount_to_risk = self.portfolio.current_equity * self.risk_per_trade
-        
-        # Price difference between entry and stop-loss
-        risk_per_unit = abs(signal.price - signal.stop_loss)
-        if risk_per_unit == 0:
-            log.warning("Risk per unit is zero (entry price equals stop loss). Cannot calculate position size.")
-            return 0.0
-
-        # Number of units to trade
-        quantity = amount_to_risk / risk_per_unit
-        
-        log.debug(f"Position size calculation: AmountToRisk={amount_to_risk:.2f}, RiskPerUnit={risk_per_unit:.4f}, Quantity={quantity:.4f}")
-        return quantity
