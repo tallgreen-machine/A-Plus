@@ -9,8 +9,6 @@ Restart=always
 User=root
 Group=root
 EnvironmentFile=/etc/trad/trad.env
-StandardOutput=append:/var/log/trad.log
-StandardError=append:/var/log/trad.log
 
 [Install]
 WantedBy=multi-user.target

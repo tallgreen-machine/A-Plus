@@ -87,6 +87,9 @@ class DataHandler:
                 except ccxt.BaseError as e:
                     log.warning(f"Could not load markets for {exchange.id}: {e}")
                     continue
+                except Exception as e:
+                    log.error(f"Unexpected error while loading markets for {exchange.id}: {e}", exc_info=True)
+                    continue
             if symbol in exchange.markets:
                 return exchange
         reason = f"No configured exchange supports the symbol. Checked exchanges: {', '.join([e.id for e in self._exchanges.values()])}"
@@ -215,133 +218,33 @@ class DataHandler:
         except Exception as e:
             log.warning(f"Failed to persist symbol status for {symbol}: {e}")
 
-    def _init_exchange(self):
-        """Initializes the ccxt exchange instance."""
-        try:
-            exchange_class = getattr(ccxt, self.exchange_id)
-            exchange = exchange_class({
-                'rateLimit': True,  # Enable built-in rate limiting
-            })
-            log.info(f"Successfully connected to {self.exchange_id}.")
-            return exchange
-        except (AttributeError, ccxt.ExchangeError) as e:
-            log.error(f"Error initializing exchange {self.exchange_id}: {e}", exc_info=True)
-            raise
-
-    def _backfill_history(self):
+    def _check_symbol_support(self):
         """
-        Backfills historical data for each symbol and timeframe on startup.
+        Checks if the symbols in the config are supported by the exchange.
+        Unsupported symbols are added to a set to be ignored.
         """
-        log.info("Backfilling historical data...")
-        for symbol in self.symbols:
-            if symbol in self.unsupported_symbols:
-                continue
-            exchange = self.get_exchange_for_symbol(symbol)
-            if not exchange:
-                continue
-            
-            for timeframe in self.timeframes:
-                key = f"{symbol}_{timeframe}"
-                log.info(f"  Fetching {key} from {exchange.id}...")
-                try:
-                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=500)
-                    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-                    df.set_index('timestamp', inplace=True)
-                    
-                    self._data[key] = df
-                    self._last_timestamps[key] = df.index[-1].value // 10**9
-                    log.info(f"    -> Fetched {len(df)} candles for {key}. Latest: {df.index[-1]}")
-                    time.sleep(exchange.rateLimit / 1000)
-                except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-                    log.warning(f"    -> Could not fetch data for {key} from {exchange.id}: {e}")
-        log.info("Historical data backfill complete.")
-
-    def update_data(self):
-        """
-        Called on each system heartbeat. Fetches the latest candle and publishes
-        a MarketEvent if it's new.
-        """
-        for symbol in self.symbols:
-            if symbol in self.unsupported_symbols:
-                continue
-            exchange = self.get_exchange_for_symbol(symbol)
-            if not exchange:
-                log.warning(f"No exchange found for symbol {symbol} in update_data. Skipping.")
-                continue
-
-            for timeframe in self.timeframes:
-                key = f"{symbol}_{timeframe}"
-                try:
-                    # Fetch the most recent 2 candles to be safe
-                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=2)
-                    if not ohlcv:
-                        continue
-                    
-                    latest_candle = ohlcv[-1]
-                    latest_timestamp = latest_candle[0] // 1000 # Convert ms to seconds
-                    
-                    last_known_timestamp = self._last_timestamps.get(key, 0)
-
-                    if latest_timestamp > last_known_timestamp:
-                        # A new candle has closed
-                        log.info(f"New candle detected for {key} at timestamp {latest_timestamp}")
-                        
-                        # Update DataFrame
-                        new_row = pd.DataFrame([latest_candle], columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                        new_row['timestamp'] = pd.to_datetime(new_row['timestamp'], unit='ms')
-                        new_row.set_index('timestamp', inplace=True)
-                        
-                        # Use concat instead of append
-                        self._data[key] = pd.concat([self._data[key], new_row])
-                        self._last_timestamps[key] = latest_timestamp
-
-                        # Publish MarketEvent
-                        market_event = MarketEvent(
-                            symbol=symbol,
-                            timeframe=timeframe,
-                            data=self._data[key] # Publish the full available history
-                        )
-                        self.event_bus.publish(market_event)
-                except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-                    log.warning(f"    -> Could not fetch data for {key}: {e}")
-
-    def on_market_event(self, event: MarketEvent):
-        """
-        Special method for backtesting. The backtester pushes data to the handler.
-        """
-        if not self.backtest_mode:
-            return
-            
-        key = f"{event.symbol}_{event.timeframe}"
+        log.info(f"Checking symbol support for {len(self.symbols)} symbols on {self.exchange_id}...")
         
-        if key not in self._data or self._data[key].empty:
-            self._data[key] = event.data
-        else:
-            self._data[key] = pd.concat([self._data[key], event.data])
+        # Check if markets are loaded, if not, load them.
+        if not self.exchange.markets:
+            try:
+                log.info(f"Markets not loaded for {self.exchange_id}. Loading now...")
+                self.exchange.load_markets()
+                log.info(f"Successfully loaded markets for {self.exchange_id}.")
+            except ccxt.BaseError as e:
+                log.error(f"A ccxt error occurred while loading markets for {self.exchange_id}: {e}", exc_info=True)
+                # This is a critical failure, we can't proceed without markets.
+                # We will let the main loop's exception handler deal with this.
+                raise
+            except Exception as e:
+                log.error(f"An unexpected error occurred while loading markets for {self.exchange_id}: {e}", exc_info=True)
+                raise
 
-        # Now that data is updated, we can publish it for the SignalLibrary
-        # This creates a two-step process in backtesting:
-        # 1. Backtrader -> DataHandler (this method)
-        # 2. DataHandler -> SignalLibrary (the publish call below)
-        
-        market_event = MarketEvent(
-            symbol=event.symbol,
-            timeframe=event.timeframe,
-            data=self._data[key] # Publish the full available history
-        )
-        self.event_bus.publish(market_event)
-
-    def get_latest_data(self, symbol: str, timeframe: str, n: int = 1) -> pd.DataFrame:
-        """
-        Returns the N most recent bars for a given symbol and timeframe.
-        """
-        key = f"{symbol}_{timeframe}"
-        return self._data.get(key, pd.DataFrame()).tail(n)
-
-    def get_historical_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
-        """
-        Returns the full historical DataFrame for a given symbol and timeframe.
-        """
-        key = f"{symbol}_{timeframe}"
-        return self._data.get(key, pd.DataFrame())
+        # Now check for symbols
+        for symbol in self.symbols:
+            if symbol in self.exchange.markets:
+                log.info(f"  -> Symbol {symbol} is supported.")
+            else:
+                log.warning(f"  -> Symbol {symbol} is NOT supported on {self.exchange_id}.")
+                self.unsupported_symbols.append(symbol)
+                self._upsert_symbol_status(symbol, 'unavailable', reason=f"Symbol not found on exchange {self.exchange_id}")

@@ -101,7 +101,7 @@ def main():
     except Exception as e:
         log.error(f"An unexpected error occurred: {e}", exc_info=True)
     finally:
-        log.info("Trad Trading Bot shutting down.")
+        log.info("Main loop finished or exception caught. Entering finally block.")
         if db_conn:
             db_conn.close()
             log.info("Database connection closed.")
