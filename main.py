@@ -70,12 +70,19 @@ def main():
         lowest_tf_seconds = timeframe_to_seconds(lowest_tf_str)
         log.info(f"Lowest timeframe detected: {lowest_tf_str} ({lowest_tf_seconds} seconds). Synchronizing loop.")
 
+        loop_count = 0
         while True:
+            loop_count += 1
+            log.info(f"--- Main loop iteration: {loop_count} ---")
             # Log portfolio status for all wallets
+            log.info("Logging portfolio history...")
             log_portfolio_history(db_conn, execution_core.portfolios)
+            log.info("Portfolio history logged.")
 
             # Initial data fetch
+            log.info("Updating market data...")
             data_handler.update_data()
+            log.info("Market data update complete.")
 
             # Calculate time until the next candle close
             now = datetime.datetime.utcnow()
