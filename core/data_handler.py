@@ -8,6 +8,8 @@ from typing import Dict, List
 
 from core.event_system import EventBus, MarketEvent
 from utils.logger import log
+from shared.db import get_db_conn
+import datetime
 
 class DataHandler:
     """
@@ -23,6 +25,14 @@ class DataHandler:
         self.symbols = symbols
         self.timeframes = timeframes
         self.backtest_mode = backtest_mode
+        self.unsupported_symbols: List[str] = []
+        # Database connection used for persisting symbol status. It's optional
+        # because some environments (unit tests) may not want DB access.
+        try:
+            self._db = get_db_conn()
+        except Exception as e:
+            log.warning(f"Could not connect to DB for symbol status persistence: {e}")
+            self._db = None
         
         self._wallets = self._load_wallets(wallets_config_path)
         self._exchanges = self._init_exchanges() if not backtest_mode else {}
@@ -64,6 +74,11 @@ class DataHandler:
         This is a simplified logic. A real system might have a mapping of symbols to exchanges.
         For now, we'll just use the first available exchange that supports the symbol.
         """
+        if symbol in self.unsupported_symbols:
+            # persist status if possible
+            self._upsert_symbol_status(symbol, 'unavailable', reason='cached - previously not found')
+            return None
+            
         for exchange in self._exchanges.values():
             # Need to load markets to check for symbol support
             if not exchange.markets:
@@ -74,7 +89,12 @@ class DataHandler:
                     continue
             if symbol in exchange.markets:
                 return exchange
+        reason = f"No configured exchange supports the symbol. Checked exchanges: {', '.join([e.id for e in self._exchanges.values()])}"
         log.warning(f"No configured exchange supports the symbol '{symbol}'.")
+        if symbol not in self.unsupported_symbols:
+            self.unsupported_symbols.append(symbol)
+        # Persist as 'unavailable'
+        self._upsert_symbol_status(symbol, 'unavailable', reason=reason)
         return None
 
     def _backfill_history(self):
@@ -83,7 +103,12 @@ class DataHandler:
         """
         log.info("Backfilling historical data...")
         for symbol in self.symbols:
+            if symbol in self.unsupported_symbols:
+                continue
             exchange = self.get_exchange_for_symbol(symbol)
+            # If we found an exchange, persist availability
+            if exchange:
+                self._upsert_symbol_status(symbol, 'available')
             if not exchange:
                 continue
             
@@ -110,6 +135,8 @@ class DataHandler:
         a MarketEvent if it's new.
         """
         for symbol in self.symbols:
+            if symbol in self.unsupported_symbols:
+                continue
             exchange = self.get_exchange_for_symbol(symbol)
             if not exchange:
                 continue
@@ -144,6 +171,10 @@ class DataHandler:
                     time.sleep(exchange.rateLimit / 1000)
                 except (ccxt.NetworkError, ccxt.ExchangeError) as e:
                     log.warning(f"Could not update data for {key}: {e}")
+                    # if exchange reports symbol not found, mark unavailable
+                    if isinstance(e, ccxt.ExchangeError) and 'symbol' in str(e).lower():
+                        self.unsupported_symbols.append(symbol)
+                        self._upsert_symbol_status(symbol, 'unavailable', reason=str(e))
 
     def get_latest_data(self, symbol: str, timeframe: str, n: int = 1) -> pd.DataFrame:
         """
@@ -160,6 +191,29 @@ class DataHandler:
         """
         key = f"{symbol}_{timeframe}"
         return self._data.get(key, pd.DataFrame())
+
+    def _upsert_symbol_status(self, symbol: str, status: str, reason: str | None = None):
+        """Upserts the symbol status into the `symbol_status` table.
+        Status should be one of: 'available', 'unavailable', 'unknown'.
+        This is best-effort: failures are logged but do not raise.
+        """
+        if not self._db:
+            return
+        try:
+            with self._db.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO symbol_status (symbol, status, reason, last_checked)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (symbol) DO UPDATE
+                      SET status = EXCLUDED.status,
+                          reason = EXCLUDED.reason,
+                          last_checked = EXCLUDED.last_checked
+                    """,
+                    (symbol, status, reason, datetime.datetime.now(datetime.timezone.utc)),
+                )
+        except Exception as e:
+            log.warning(f"Failed to persist symbol status for {symbol}: {e}")
 
     def _init_exchange(self):
         """Initializes the ccxt exchange instance."""
@@ -180,6 +234,8 @@ class DataHandler:
         """
         log.info("Backfilling historical data...")
         for symbol in self.symbols:
+            if symbol in self.unsupported_symbols:
+                continue
             exchange = self.get_exchange_for_symbol(symbol)
             if not exchange:
                 continue
@@ -207,6 +263,8 @@ class DataHandler:
         a MarketEvent if it's new.
         """
         for symbol in self.symbols:
+            if symbol in self.unsupported_symbols:
+                continue
             exchange = self._get_exchange_for_symbol(symbol)
             if not exchange:
                 log.warning(f"No exchange found for symbol {symbol} in update_data. Skipping.")
