@@ -177,27 +177,28 @@ class DataHandler:
     def _backfill_history(self):
         """
         Backfills historical data for each symbol and timeframe on startup.
-        Follows the logic from section 2.3.3 of the spec.
         """
         log.info("Backfilling historical data...")
         for symbol in self.symbols:
+            exchange = self.get_exchange_for_symbol(symbol)
+            if not exchange:
+                continue
+            
             for timeframe in self.timeframes:
                 key = f"{symbol}_{timeframe}"
-                log.info(f"  Fetching {key}...")
+                log.info(f"  Fetching {key} from {exchange.id}...")
                 try:
-                    # Fetch a reasonable amount of history, e.g., 500 candles
-                    # In a real system, this would be more robust, handling pagination.
-                    ohlcv = self._exchange.fetch_ohlcv(symbol, timeframe, limit=500)
+                    ohlcv = exchange.fetch_ohlcv(symbol, timeframe, limit=500)
                     df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                     df.set_index('timestamp', inplace=True)
                     
                     self._data[key] = df
-                    self._last_timestamps[key] = df.index[-1].value // 10**9 # Store as seconds
+                    self._last_timestamps[key] = df.index[-1].value // 10**9
                     log.info(f"    -> Fetched {len(df)} candles for {key}. Latest: {df.index[-1]}")
-                    time.sleep(self._exchange.rateLimit / 1000) # Respect rate limit
+                    time.sleep(exchange.rateLimit / 1000)
                 except (ccxt.NetworkError, ccxt.ExchangeError) as e:
-                    log.warning(f"    -> Could not fetch data for {key}: {e}")
+                    log.warning(f"    -> Could not fetch data for {key} from {exchange.id}: {e}")
         log.info("Historical data backfill complete.")
 
     def update_data(self):
