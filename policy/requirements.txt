@@ -9,3 +9,4 @@ python-dotenv
 tensorboard
 tqdm
 rich
+matplotlib

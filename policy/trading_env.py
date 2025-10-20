@@ -8,18 +8,32 @@ import psycopg2
 import psycopg2.extras
 
 from shared.db import get_db_conn
+from utils.logger import log
 
 
 class CryptoTradingEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, symbols: list[str], window: int = 200):
+    def __init__(self, symbols: list[str], window: int = 200, total_timesteps: int = 100):
         super().__init__()
+        log.info(f"Initializing CryptoTradingEnv for symbols: {symbols}")
         self.symbols = symbols
         self.window = window
+        self.total_timesteps = total_timesteps
         self.n_assets = len(symbols)
         self._active_patterns = self._load_active_patterns()
         self.known_patterns = ['Liquidity Sweep']  # A registry of all possible patterns
+
+        # State buffers
+        self._weights = np.zeros(self.n_assets, dtype=np.float32)
+        self._cash = 1.0
+        self._last_obs = None
+        
+        # Data buffers for market prices
+        self._prices = {}
+        self._timestamps = []
+        self._current_step = 0
+        self._load_market_data()
 
         # Observations: embeddings, weights, cash, regime, conviction, active_patterns
         emb_dim = 128
@@ -27,25 +41,54 @@ class CryptoTradingEnv(gym.Env):
         obs_dim = self.n_assets * emb_dim + self.n_assets + 1 + 3 + 1 + patterns_dim
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
 
-        # Action: target weights per asset in [0,1]; residual goes to cash (long-only)
-        self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.n_assets,), dtype=np.float32)
+        # Action: target weights per asset in [-1,1] for rescaling
+        self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.n_assets,), dtype=np.float32)
 
-        # State buffers
-        self._weights = np.zeros(self.n_assets, dtype=np.float32)
-        self._cash = 1.0
-        self._last_obs = None
+        log.info("CryptoTradingEnv initialized.")
+
+    def _load_market_data(self):
+        """Loads historical price data from the database."""
+        log.info("Loading market data from database...")
+        with get_db_conn() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # Get all timestamps for the first symbol to establish the timeline
+                cur.execute(
+                    """
+                    SELECT DISTINCT timestamp FROM market_data
+                    WHERE symbol = %s ORDER BY timestamp
+                    """,
+                    (self.symbols[0],)
+                )
+                self._timestamps = [row['timestamp'] for row in cur.fetchall()]
+
+                if not self._timestamps:
+                    log.error("No market data found for the primary symbol. Cannot proceed.")
+                    return
+
+                # Load close prices for all symbols
+                for symbol in self.symbols:
+                    cur.execute(
+                        """
+                        SELECT timestamp, close FROM market_data
+                        WHERE symbol = %s ORDER BY timestamp
+                        """,
+                        (symbol,)
+                    )
+                    # Store prices in a dictionary for quick lookup by timestamp
+                    self._prices[symbol] = {row['timestamp']: float(row['close']) for row in cur.fetchall()}
+        log.info(f"Loaded {len(self._timestamps)} timestamps and price data for {len(self.symbols)} symbols.")
 
     def _load_active_patterns(self):
         """Loads the active patterns from the JSON file."""
         active_patterns_path = Path('active_patterns.json')
         if not active_patterns_path.exists():
-            print("Warning: active_patterns.json not found. No patterns will be used.")
+            log.warning("active_patterns.json not found. No patterns will be used.")
             return []
         try:
             with open(active_patterns_path, 'r') as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            print("Warning: active_patterns.json is empty or malformed. No patterns will be used.")
+            log.warning("active_patterns.json is empty or malformed. No patterns will be used.")
             return []
 
     def _get_pattern_features(self) -> np.ndarray:
@@ -54,6 +97,7 @@ class CryptoTradingEnv(gym.Env):
         return np.array([1.0 if name in active_pattern_names else 0.0 for name in self.known_patterns], dtype=np.float32)
 
     def _fetch_latest_embedding(self, symbol: str):
+        log.debug(f"Fetching latest embedding for {symbol}...")
         def _coerce_embedding(x):
             try:
                 # Already a sequence of numbers
@@ -84,7 +128,7 @@ class CryptoTradingEnv(gym.Env):
             return arr
 
         with get_db_conn() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute(
                     """
                     SELECT embedding_json FROM current_embeddings
@@ -96,31 +140,39 @@ class CryptoTradingEnv(gym.Env):
                 )
                 row = cur.fetchone()
                 if not row:
+                    log.warning(f"No embedding found for {symbol}. Returning zeros.")
                     return np.zeros(128, dtype=np.float32)
-                emb = row["embedding"] if isinstance(row, dict) else row[0]
-                return _coerce_embedding(emb)
+                emb = row["embedding_json"]
+                result = _coerce_embedding(emb)
+                log.debug(f"Successfully fetched embedding for {symbol}.")
+                return result
 
     def _fetch_market_state(self):
+        log.debug("Fetching market state...")
         with get_db_conn() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT current_regime, conviction FROM market_state WHERE id = 1")
                 row = cur.fetchone()
                 if not row:
+                    log.warning("No market state found. Using default (NEUTRAL).")
                     return np.array([0, 1, 0], dtype=np.float32), 0.0  # default NEUTRAL
-                regime = row["current_regime"] if isinstance(row, dict) else row[0]
-                conviction = float(row["conviction"] if isinstance(row, dict) else row[1])
+                regime = row["current_regime"]
+                conviction = float(row["conviction"])
         one_hot = np.array(
             [1, 0, 0] if regime == "BEARISH" else ([0, 0, 1] if regime == "BULLISH" else [0, 1, 0]),
             dtype=np.float32,
         )
+        log.debug(f"Successfully fetched market state: {regime}, {conviction}")
         return one_hot, conviction
 
     def _fetch_policy_config(self):
+        log.debug("Fetching policy config...")
         with get_db_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT reward_weights, risk_params FROM policy_config WHERE id = 1")
                 row = cur.fetchone()
                 if not row:
+                    log.warning("No policy config found. Using default values.")
                     # Return default dictionaries
                     return {"sharpe": 0.6, "pnl": 0.3, "drawdown": -0.1, "turnover": -0.1}, {"max_pos": 0.15}
                 
@@ -131,18 +183,32 @@ class CryptoTradingEnv(gym.Env):
                 rw = json.loads(rw_raw) if isinstance(rw_raw, str) else rw_raw
                 rp = json.loads(rp_raw) if isinstance(rp_raw, str) else rp_raw
                 
+                log.debug("Successfully fetched policy config.")
                 return rw, rp
 
     def reset(self, *, seed: int | None = None, options: Dict[str, Any] | None = None):
+        log.info("Resetting environment.")
         super().reset(seed=seed)
         self._weights[:] = 0.0
         self._cash = 1.0
+        self._current_step = 0
         obs = self._build_observation()
         self._last_obs = obs
+        log.info("Environment reset complete.")
         return obs, {}
 
     def step(self, action):
-        action = np.clip(action, self.action_space.low, self.action_space.high)
+        log.debug(f"Executing step with action: {action}")
+        
+        # Check if we are at the end of the dataset
+        if self._current_step >= len(self._timestamps) - 1:
+            obs = self._build_observation()
+            return obs, 0, True, False, {"msg": "End of dataset reached."}
+
+        # Rescale action from [-1, 1] to [0, 1] for long-only portfolio
+        action = (action + 1) / 2.0
+        action = np.clip(action, 0.0, 1.0)
+
         # Normalize weights to <=1 total; residual to cash
         w = action.astype(np.float32)
         w = w / max(1.0, w.sum())
@@ -153,12 +219,23 @@ class CryptoTradingEnv(gym.Env):
         w = np.minimum(w, max_pos)
         w = w / max(1.0, w.sum())
 
-        # Compute simple PnL proxy: dot(weights, pseudo-returns)
-        # This is a placeholder: replace with real price-based returns from market_data.
-        pseudo_returns = np.zeros(self.n_assets, dtype=np.float32)
-        reward_weights, _ = self._fetch_policy_config()
+        # Calculate returns from real market data
+        current_ts = self._timestamps[self._current_step]
+        next_ts = self._timestamps[self._current_step + 1]
+        
+        returns = np.zeros(self.n_assets, dtype=np.float32)
+        for i, symbol in enumerate(self.symbols):
+            current_price = self._prices[symbol].get(current_ts)
+            next_price = self._prices[symbol].get(next_ts)
+            
+            if current_price is not None and next_price is not None and current_price > 0:
+                returns[i] = (next_price - current_price) / current_price
+            else:
+                log.warning(f"Missing price for {symbol} at step {self._current_step}. Return will be 0.")
 
-        pnl = float(np.dot(w - self._weights, pseudo_returns))
+        # Compute PnL and other reward components
+        reward_weights, _ = self._fetch_policy_config()
+        pnl = float(np.dot(w - self._weights, returns))
         turnover = float(np.abs(w - self._weights).sum())
         drawdown_penalty = 0.0  # placeholder
 
@@ -170,15 +247,18 @@ class CryptoTradingEnv(gym.Env):
 
         self._weights = w
         self._cash = 1.0 - w.sum()
+        self._current_step += 1
 
         obs = self._build_observation()
         self._last_obs = obs
         terminated = False
         truncated = False
         info = {"pnl": pnl, "turnover": turnover}
+        log.debug("Step execution complete.")
         return obs, reward, terminated, truncated, info
 
     def _build_observation(self):
+        log.debug("Building observation...")
         embs = []
         for sym in self.symbols:
             embs.append(self._fetch_latest_embedding(sym))
@@ -194,8 +274,10 @@ class CryptoTradingEnv(gym.Env):
             np.array([self._cash], dtype=np.float32),
             regime_one_hot.astype(np.float32),
             np.array([conviction], dtype=np.float32),
-            pattern_features.astype(np.float32),
+            pattern_features,
         ], dtype=np.float32)
+        log.debug(f"Observation built with shape: {obs.shape}")
+        log.debug("Observation built successfully.")
         return obs
 
     def render(self):
