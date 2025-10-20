@@ -2,6 +2,16 @@
 from shared.db import get_db_conn
 import pandas as pd
 
+PATTERN_REGISTRY = {}
+
+def register_pattern(name):
+    def decorator(cls):
+        PATTERN_REGISTRY[name] = cls
+        return cls
+    return decorator
+
+
+@register_pattern("Tier1")
 class Tier1Patterns:
     """
     Library of proven, non-degrading, fundamental patterns.

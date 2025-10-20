@@ -4,6 +4,8 @@ import numpy as np
 import json
 from pathlib import Path
 from typing import Dict, Any
+import psycopg2
+import psycopg2.extras
 
 from shared.db import get_db_conn
 
@@ -85,9 +87,9 @@ class CryptoTradingEnv(gym.Env):
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT embedding FROM current_embeddings
+                    SELECT embedding_json FROM current_embeddings
                     WHERE symbol = %s
-                    ORDER BY ts DESC
+                    ORDER BY timestamp DESC
                     LIMIT 1
                     """,
                     (symbol,),
@@ -115,13 +117,20 @@ class CryptoTradingEnv(gym.Env):
 
     def _fetch_policy_config(self):
         with get_db_conn() as conn:
-            with conn.cursor() as cur:
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
                 cur.execute("SELECT reward_weights, risk_params FROM policy_config WHERE id = 1")
                 row = cur.fetchone()
                 if not row:
+                    # Return default dictionaries
                     return {"sharpe": 0.6, "pnl": 0.3, "drawdown": -0.1, "turnover": -0.1}, {"max_pos": 0.15}
-                rw = row["reward_weights"] if isinstance(row, dict) else row[0]
-                rp = row["risk_params"] if isinstance(row, dict) else row[1]
+                
+                rw_raw = row["reward_weights"]
+                rp_raw = row["risk_params"]
+
+                # Ensure the data is parsed into a dictionary
+                rw = json.loads(rw_raw) if isinstance(rw_raw, str) else rw_raw
+                rp = json.loads(rp_raw) if isinstance(rp_raw, str) else rp_raw
+                
                 return rw, rp
 
     def reset(self, *, seed: int | None = None, options: Dict[str, Any] | None = None):

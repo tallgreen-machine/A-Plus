@@ -68,6 +68,7 @@ set -euo pipefail
 DEST="${DEST:-/srv/trad}"
 export PIP_DISABLE_PIP_VERSION_CHECK=1
 export DEBIAN_FRONTEND=noninteractive
+export TMPDIR=/var/tmp/pip
 
 # Remove potentially broken Caddy repo to prevent apt-get update from failing
 sudo rm -f /etc/apt/sources.list.d/caddy-stable.list
@@ -78,6 +79,7 @@ sudo apt-get install -y python3-venv postgresql-client
 # Create venv for main bot
 python3 -m venv "${DEST}/.venv"
 "${DEST}/.venv/bin/pip" install -r "${DEST}/requirements.txt"
+"${DEST}/.venv/bin/pip" install -r "${DEST}/policy/requirements.txt"
 
 # Create venv for dashboard
 python3 -m venv "${DEST}/dashboard/.venv"
