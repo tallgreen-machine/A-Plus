@@ -42,6 +42,7 @@ class OrderEvent(Event):
     order_type: str  # 'MARKET' or 'LIMIT'
     quantity: float
     direction: str  # 'BUY' or 'SELL'
+    wallet_id: str
 
 @dataclass
 class FillEvent(Event):
@@ -55,6 +56,7 @@ class FillEvent(Event):
     price: float
     fill_cost: float
     commission: float
+    wallet_id: str
 
 
 # 2. Event Bus (as specified in section 2.1 of the trading_strategy.rtf)

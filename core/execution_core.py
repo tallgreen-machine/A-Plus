@@ -1,4 +1,6 @@
 import datetime
+import json
+import os
 import pandas as pd
 from core.event_system import EventBus, SignalEvent, OrderEvent, FillEvent
 from utils.logger import log
@@ -8,25 +10,27 @@ from shared.db import get_db_conn
 
 class Portfolio:
     """
-    Manages the trading account's state, including cash, positions, and equity.
+    Manages the trading account's state for a single wallet, including cash, positions, and equity.
     """
-    def __init__(self, initial_cash=100000.0):
+    def __init__(self, wallet_id, initial_cash=100000.0):
+        self.wallet_id = wallet_id
         self.initial_cash = initial_cash
         self.cash = initial_cash
         self.positions = {}  # { 'symbol': quantity }
         self.holdings = {}   # { 'symbol': { 'quantity': float, 'avg_price': float } }
         self.current_equity = initial_cash
-        log.info(f"Portfolio initialized with initial cash: {initial_cash:.2f}")
+        log.info(f"Portfolio for wallet '{self.wallet_id}' initialized with initial cash: {initial_cash:.2f}")
 
     def update_on_fill(self, fill_event: FillEvent):
         """
         Updates the portfolio based on a fill event from the exchange.
         """
-        # This is a simplified update logic. A real implementation would be more complex.
+        if fill_event.wallet_id != self.wallet_id:
+            return # This fill is not for this portfolio
+
         if fill_event.direction == 'BUY':
             self.cash -= fill_event.fill_cost
             if fill_event.symbol in self.holdings:
-                # Update existing position
                 current_qty = self.holdings[fill_event.symbol]['quantity']
                 current_avg_price = self.holdings[fill_event.symbol]['avg_price']
                 new_total_qty = current_qty + fill_event.quantity
@@ -35,20 +39,18 @@ class Portfolio:
                 self.holdings[fill_event.symbol]['quantity'] = new_total_qty
                 self.holdings[fill_event.symbol]['avg_price'] = new_avg_price
             else:
-                # Add new position
                 self.holdings[fill_event.symbol] = {
                     'quantity': fill_event.quantity,
                     'avg_price': fill_event.price
                 }
         elif fill_event.direction == 'SELL':
             self.cash += fill_event.fill_cost
-            # Logic to reduce or close a position
             if fill_event.symbol in self.holdings:
                 self.holdings[fill_event.symbol]['quantity'] -= fill_event.quantity
                 if self.holdings[fill_event.symbol]['quantity'] <= 0:
                     del self.holdings[fill_event.symbol]
         
-        log.info(f"Portfolio updated on fill: Cash {self.cash:.2f}, Holdings: {self.holdings}")
+        log.info(f"Portfolio for wallet '{self.wallet_id}' updated on fill: Cash {self.cash:.2f}, Holdings: {self.holdings}")
 
 
 class SimulatedExchange:
@@ -66,11 +68,8 @@ class SimulatedExchange:
         """
         Handles an order event, simulates its execution, and publishes a fill event.
         """
-        log.info(f"SimulatedExchange received order: {order.direction} {order.quantity} {order.symbol}")
+        log.info(f"SimulatedExchange received order for wallet '{order.wallet_id}': {order.direction} {order.quantity} {order.symbol}")
 
-        # Get the latest price to simulate the fill
-        # For simplicity, we assume the order is filled at the last close price.
-        # A more complex simulation could include slippage and commission.
         latest_bars = self.data_handler.get_latest_data(order.symbol, self.data_handler.timeframes[0], n=1)
         if latest_bars.empty:
             log.error(f"Could not get latest price for {order.symbol} to simulate fill. Order ignored.")
@@ -87,17 +86,96 @@ class SimulatedExchange:
             direction=order.direction,
             price=fill_price,
             fill_cost=fill_cost,
-            commission=0.0 # TODO: Add commission simulation
+            commission=0.0,
+            wallet_id=order.wallet_id
         )
         
         self.event_bus.publish(fill_event)
-        log.info(f"SimulatedExchange published FillEvent for {order.symbol} at price {fill_price:.2f}")
+        log.info(f"SimulatedExchange published FillEvent for wallet '{order.wallet_id}' for {order.symbol} at price {fill_price:.2f}")
 
 
 class ExecutionCore:
     """
-    Handles order generation, risk management, and portfolio updates.
+    Handles order generation for multiple wallets, risk management, and portfolio updates.
     """
+    def __init__(self, event_bus: EventBus, data_handler: DataHandler, wallets_config_path='config/wallets.json'):
+        self.event_bus = event_bus
+        self.data_handler = data_handler
+        self.wallets = self._load_wallets(wallets_config_path)
+        self.portfolios = {w['wallet_id']: Portfolio(wallet_id=w['wallet_id']) for w in self.wallets}
+
+        self.event_bus.subscribe(SignalEvent, self.on_signal)
+        self.event_bus.subscribe(FillEvent, self.on_fill)
+        log.info(f"ExecutionCore initialized for {len(self.wallets)} wallets.")
+
+    def _load_wallets(self, path):
+        """Loads wallet configurations from a JSON file."""
+        if not os.path.exists(path):
+            log.error(f"Wallets config file not found at '{path}'.")
+            return []
+        with open(path, 'r') as f:
+            wallets = json.load(f)
+        log.info(f"Loaded {len(wallets)} wallets from '{path}'.")
+        return wallets
+
+    def on_signal(self, signal: SignalEvent):
+        """Handles a signal event by generating orders for all configured wallets."""
+        log.info(f"ExecutionCore received signal: {signal.signal_type} {signal.symbol}")
+
+        for wallet_config in self.wallets:
+            wallet_id = wallet_config['wallet_id']
+            portfolio = self.portfolios[wallet_id]
+
+            # Simple risk management: calculate order size as a percentage of cash
+            trade_allocation = wallet_config.get('trade_allocation', 0.01) # Default to 1%
+            order_quantity = (portfolio.cash * trade_allocation) / signal.price
+
+            if order_quantity > 0:
+                order = OrderEvent(
+                    symbol=signal.symbol,
+                    order_type='MARKET',
+                    quantity=order_quantity,
+                    direction=signal.signal_type,
+                    wallet_id=wallet_id
+                )
+                self.event_bus.publish(order)
+                log.info(f"Published OrderEvent for wallet '{wallet_id}': {order.direction} {order.quantity:.4f} {order.symbol}")
+
+    def on_fill(self, fill: FillEvent):
+        """Handles a fill event by updating the corresponding portfolio and recording the trade."""
+        if fill.wallet_id in self.portfolios:
+            # Update the specific portfolio that this fill belongs to
+            self.portfolios[fill.wallet_id].update_on_fill(fill)
+            self.record_trade(fill)
+        else:
+            log.warning(f"Received fill for unknown wallet_id: {fill.wallet_id}")
+
+    def record_trade(self, fill: FillEvent):
+        """Saves the details of an executed trade to the database."""
+        try:
+            with get_db_conn() as conn:
+                with conn.cursor() as cur:
+                    # This is a simplified insertion. We assume a new trade for each fill.
+                    # A more robust implementation would handle opening and closing trades.
+                    cur.execute(
+                        """
+                        INSERT INTO trades (wallet_id, pattern_name, symbol, entry_time, entry_price, trade_type, pnl_percentage)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            fill.wallet_id,
+                            'UNKNOWN', # We need to get this from the signal
+                            fill.symbol,
+                            fill.timestamp,
+                            fill.price,
+                            fill.direction,
+                            0 # PnL is calculated on closing the trade
+                        )
+                    )
+            log.info(f"Recorded trade for wallet '{fill.wallet_id}' in database.")
+        except Exception as e:
+            log.error(f"Failed to record trade in database: {e}")
+
     def __init__(self, event_bus: EventBus, portfolio: Portfolio, risk_per_trade=0.01):
         self.event_bus = event_bus
         self.portfolio = portfolio

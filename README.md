@@ -57,26 +57,27 @@ This repo includes infra (PostgreSQL + pgvector), SQL schema, and Python stubs f
 		- encoder_model.py (stub)
 		- train_encoder.py (stub)
 		- run_encoder.py (stub)
-	- policy/
-		- requirements.txt
-		- trading_env.py (stub)
-		- train.py (stub)
-		- run_trader.py (stub)
-		- backfill_ohlcv.py (Kraken OHLCV seeding)
-	- config/
-		- .env.example (environment variables template)
-	- Makefile (venv setup, install, infra helpers)
+- policy/
+	- requirements.txt
+	- trading_env.py (stub)
+	- train.py (stub)
+	- run_trader.py (stub)
+	- backfill_ohlcv.py (Kraken OHLCV seeding)
+- config/
+	- .env.example (environment variables template)
+	- wallets.json (multi-wallet configurations)
+- Makefile (venv setup, install, infra helpers)
 
-	## Quick start (overview)
+## Quick start (overview)
 
-	1) Copy and edit environment variables
+1) Copy and edit environment variables
 
-		 Duplicate `config/.env.example` to `config/.env` and fill secrets (OpenAI, Kraken).
+	 Duplicate `config/.env.example` to `config/.env` and fill secrets (OpenAI, Kraken).
+	 Duplicate `config/wallets.json` and add your exchange API keys for each wallet.
 
-	2) Database setup
+2) Database setup
 
-		Option A: Use existing PostgreSQL on the host (preferred if already running)
-
+	Option A: Use existing PostgreSQL on the host (preferred if already running)
 		- Ensure pgvector extension is installed on your server
 		- Set DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD in `config/.env`
 		- Apply schema:
