@@ -189,7 +189,7 @@ async def update_training_status(job_id: str, status_update: dict):
 async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
     """Background task to run the actual ML training job"""
     try:
-        from api.real_training_runner import RealTrainingRunner
+        from ml.real_training_runner import RealTrainingRunner
         
         log.info(f"Starting real ML training for job {job_id}")
         

@@ -17,7 +17,7 @@ sys.path.append('/workspaces/Trad')
 sys.path.append('/srv/trad')
 
 from utils.logger import log as logger
-from enhanced_data_collector import EnhancedDataCollector
+from data.enhanced_data_collector import EnhancedDataCollector
 
 
 class HistoricalDataBackfill:

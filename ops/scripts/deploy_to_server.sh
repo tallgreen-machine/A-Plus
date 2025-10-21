@@ -4,6 +4,15 @@ set -euo pipefail
 # Usage:
 #   SERVER=1.2.3.4 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
 # Requires: ssh, rsync, sudo on remote (or SSH_USER=root)
+#
+# Project Structure (automatically synced):
+#   data/     - Data collection and exchange integration modules
+#   ml/       - Machine learning and pattern recognition components  
+#   tools/    - Utility scripts for maintenance and debugging
+#   api/      - REST API endpoints
+#   core/     - Core trading system components
+#   policy/   - Trading policies and ML training
+#   strategies/ - Trading strategy implementations
 
 SERVER="${SERVER:-}"
 SSH_USER="${SSH_USER:-root}"

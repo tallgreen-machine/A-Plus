@@ -15,9 +15,11 @@ import time
 # Add policy directory to path for imports
 sys.path.append('/workspaces/Trad/policy')
 sys.path.append('/srv/trad/policy')
+sys.path.append('/workspaces/Trad')
+sys.path.append('/srv/trad')
 
 from utils.logger import log as logger
-from real_exchange_data_collector import RealExchangeDataCollector
+from data.real_exchange_data_collector import RealExchangeDataCollector
 
 
 class RealTrainingRunner:
