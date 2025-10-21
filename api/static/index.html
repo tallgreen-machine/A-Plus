@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TradePulse IQ Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-bg': '#131722', // Main background
+              'brand-surface': '#1E222D', // Card backgrounds
+              'brand-border': '#363A45', // Borders
+              'brand-text-primary': '#F0F3F8', // Primary text (off-white)
+              'brand-text-secondary': '#8A93A7', // Secondary text
+              'brand-primary': '#3B82F6', // A nice, modern blue
+              'brand-positive': '#26A69A', // Teal for profit
+              'brand-negative': '#EF5350', // Red for loss
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            animation: {
+              shimmer: 'shimmer 1.5s infinite linear',
+              fadeIn: 'fadeIn 0.5s ease-in-out forwards',
+              'fade-in-slow': 'fadeIn 0.7s ease-in-out forwards',
+              'pulse-glow': 'pulse-glow 2.5s ease-in-out infinite',
+            },
+            keyframes: {
+              shimmer: {
+                '0%': { transform: 'translateX(-100%)' },
+                '100%': { transform: 'translateX(100%)' },
+              },
+              fadeIn: {
+                '0%': { opacity: 0, transform: 'translateY(10px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
+              },
+              'pulse-glow': {
+                '0%, 100%': {
+                  transform: 'scale(1)',
+                },
+                '50%': {
+                  transform: 'scale(1.2)',
+                },
+              },
+            },
+          },
+        },
+      }
+    </script>
+    <link rel="preconnect" href="https://rsms.me/">
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+
+<link rel="stylesheet" href="/index.css">
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.3.0",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-Cz6W21ii.js"></script>
+</head>
+  <body class="bg-brand-bg text-brand-text-primary">
+    <div id="root"></div>
+  </body>
+</html>

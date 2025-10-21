@@ -1,0 +1,66 @@
+"""
+FastAPI application for TradePulse IQ Dashboard
+Provides REST API endpoints for the trading platform
+"""
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import uvicorn
+import os
+import logging
+
+# Import API routers
+from auth import router as auth_router
+from portfolio import router as portfolio_router
+from trades import router as trades_router
+from patterns import router as patterns_router
+from training import router as training_router
+from exchanges import router as exchanges_router
+from analytics import router as analytics_router
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create FastAPI app
+app = FastAPI(
+    title="TradePulse IQ API",
+    description="Trading Platform API for dashboard and analytics",
+    version="1.0.0"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your domain
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "TradePulse IQ API"}
+
+# Include API routers
+app.include_router(auth_router, tags=["Authentication"])
+app.include_router(portfolio_router, tags=["Portfolio"])
+app.include_router(trades_router, tags=["Trades"])
+app.include_router(patterns_router, tags=["Patterns"])
+app.include_router(training_router, tags=["Training"])
+app.include_router(exchanges_router, tags=["Exchanges"])
+app.include_router(analytics_router, tags=["Analytics"])
+
+# Serve React app at root
+@app.get("/")
+async def serve_react_app():
+    return FileResponse("static/index.html")
+
+# Mount static files for React app assets
+app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
