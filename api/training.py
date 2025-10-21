@@ -180,12 +180,68 @@ async def start_training(
         log.error(f"Error starting training job: {e}")
         raise HTTPException(status_code=500, detail="Failed to start training job")
 
+async def update_training_status(job_id: str, status_update: dict):
+    """Callback function for training runner to update job status"""
+    if job_id in training_jobs:
+        training_jobs[job_id].update(status_update)
+        log.info(f"Updated training job {job_id}: {status_update.get('message', 'Status update')}")
+
 async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
-    """Background task to run the training job"""
+    """Background task to run the actual ML training job"""
+    try:
+        from api.real_training_runner import RealTrainingRunner
+        
+        log.info(f"Starting real ML training for job {job_id}")
+        
+        # Create training runner with callback
+        runner = RealTrainingRunner(
+            job_id=job_id,
+            symbols=request.symbols,
+            patterns=request.patterns,
+            update_callback=update_training_status
+        )
+        
+        # Execute the training
+        results = await runner.run_training()
+        
+        # Mark as complete with results
+        if job_id in training_jobs:
+            training_jobs[job_id].update({
+                "status": "COMPLETE",
+                "phase": TrainingPhase.COMPLETE,
+                "progress": 100.0,
+                "message": "Training completed successfully!",
+                "eta": "Complete",
+                "completedAt": datetime.utcnow().isoformat(),
+                "results": results
+            })
+            
+        log.info(f"Training job {job_id} completed successfully")
+        
+    except ImportError as e:
+        log.error(f"Failed to import training dependencies: {e}")
+        # Fall back to simulation mode
+        await run_simulation_training_job(job_id, request, user_id)
+        
+    except Exception as e:
+        log.error(f"Error in training job {job_id}: {e}")
+        if job_id in training_jobs:
+            training_jobs[job_id].update({
+                "status": "FAILED",
+                "message": f"Training failed: {str(e)}",
+                "eta": "Failed"
+            })
+
+
+
+async def run_simulation_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
+    """Fallback simulation training job (original implementation)"""
     try:
         job = training_jobs[job_id]
         
-        # Simulate training phases
+        # Simulate training phases (fallback for missing dependencies)
+        log.warning(f"Running simulation training for job {job_id} (real training unavailable)")
+        
         phases = [
             (TrainingPhase.DATA_COLLECTION, "Collecting historical market data..."),
             (TrainingPhase.VIABILITY_ASSESSMENT, "Analyzing pattern viability..."),
@@ -194,7 +250,6 @@ async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: 
             (TrainingPhase.VALIDATION, "Running walk-forward validation..."),
             (TrainingPhase.ROBUSTNESS, "Stress testing patterns..."),
             (TrainingPhase.SCORING, "Calculating confidence scores..."),
-            (TrainingPhase.COMPLETE, "Training completed!")
         ]
         
         for i, (phase, message) in enumerate(phases):
@@ -202,20 +257,19 @@ async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: 
                 break
                 
             progress = (i + 1) / len(phases) * 100
-            eta_minutes = (len(phases) - i - 1) * 30  # 30 minutes per phase estimate
+            eta_minutes = (len(phases) - i - 1) * 3  # Faster simulation
             eta = f"{eta_minutes} minutes" if eta_minutes > 0 else "Complete"
             
             job.update({
                 "phase": phase,
                 "progress": progress,
-                "message": message,
+                "message": f"[SIMULATION] {message}",
                 "eta": eta
             })
             
-            # In production, this would actually run the training script
-            # For now, just simulate with sleep
+            # Simulate work
             import asyncio
-            await asyncio.sleep(5)  # Simulate work
+            await asyncio.sleep(2)  # Reduced simulation time
             
         # Mark as complete
         if job_id in training_jobs:
@@ -223,17 +277,17 @@ async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: 
                 "status": "COMPLETE",
                 "phase": TrainingPhase.COMPLETE,
                 "progress": 100.0,
-                "message": "Training completed successfully!",
+                "message": "Simulation training completed!",
                 "eta": "Complete",
                 "completedAt": datetime.utcnow().isoformat()
             })
             
     except Exception as e:
-        log.error(f"Error in training job {job_id}: {e}")
+        log.error(f"Error in simulation training job {job_id}: {e}")
         if job_id in training_jobs:
             training_jobs[job_id].update({
                 "status": "FAILED",
-                "message": f"Training failed: {str(e)}",
+                "message": f"Simulation training failed: {str(e)}",
                 "eta": "Failed"
             })
 
