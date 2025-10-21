@@ -46,40 +46,79 @@ const App: React.FC = () => {
         try {
             if (isInitial) setLoading(true);
 
-            // FIX: Pass promises as a tuple to `Promise.all` to preserve type information for each element.
-            // When an array of promises with different resolved types is created separately, TypeScript infers a
-            // union type for the array elements, leading to type errors on destructuring the result of `Promise.all`.
-            const [
-                portfolioData,
-                tradesData,
-                logsData,
-                historyData,
-                performanceData,
-                statusData,
-                patternsData,
-                activeTradesData,
-                trainedAssetsData,
-            ] = await Promise.all([
-                api.getPortfolio(currentUser),
-                api.getTrades(currentUser),
-                api.getLogs(currentUser),
-                api.getPortfolioHistory(currentUser),
-                api.getPerformance(currentUser),
-                api.getStatus(),
-                api.getPatternsPerformance(currentUser),
-                api.getActiveTrades(currentUser),
-                api.getTrainedAssets(currentUser),
-            ]);
+            // Fetch portfolio data with error handling
+            const portfolioData = await api.getPortfolio(currentUser);
+            
+            if (portfolioData && portfolioData.portfolio) {
+                setPortfolio(portfolioData.portfolio);
+            } else {
+                console.warn('Invalid portfolio data received:', portfolioData);
+            }
 
-            setPortfolio(portfolioData.portfolio);
-            setTrades(tradesData);
-            setLogs(logsData);
-            setHistory(historyData);
-            setPerformance(performanceData);
-            setStatus(statusData);
-            setPatterns(patternsData);
-            setActiveTrades(activeTradesData);
-            setTrainedAssets(trainedAssetsData);
+            // Fetch other data with individual error handling
+            try {
+                const tradesData = await api.getTrades(currentUser);
+                setTrades(Array.isArray(tradesData) ? tradesData : []);
+            } catch (error) {
+                console.warn('Failed to fetch trades:', error);
+                setTrades([]);
+            }
+
+            try {
+                const logsData = await api.getLogs(currentUser);
+                setLogs(Array.isArray(logsData) ? logsData : []);
+            } catch (error) {
+                console.warn('Failed to fetch logs:', error);
+                setLogs([]);
+            }
+
+            try {
+                const historyData = await api.getPortfolioHistory(currentUser);
+                setHistory(Array.isArray(historyData) ? historyData : []);
+            } catch (error) {
+                console.warn('Failed to fetch history:', error);
+                setHistory([]);
+            }
+
+            try {
+                const performanceData = await api.getPerformance(currentUser);
+                setPerformance(performanceData);
+            } catch (error) {
+                console.warn('Failed to fetch performance:', error);
+                setPerformance(null);
+            }
+
+            try {
+                const statusData = await api.getStatus();
+                setStatus(statusData);
+            } catch (error) {
+                console.warn('Failed to fetch status:', error);
+                setStatus({ status: 'STOPPED' });
+            }
+
+            try {
+                const patternsData = await api.getPatternsPerformance(currentUser);
+                setPatterns(Array.isArray(patternsData) ? patternsData : []);
+            } catch (error) {
+                console.warn('Failed to fetch patterns:', error);
+                setPatterns([]);
+            }
+
+            try {
+                const activeTradesData = await api.getActiveTrades(currentUser);
+                setActiveTrades(Array.isArray(activeTradesData) ? activeTradesData : []);
+            } catch (error) {
+                console.warn('Failed to fetch active trades:', error);
+                setActiveTrades([]);
+            }
+
+            try {
+                const trainedAssetsData = await api.getTrainedAssets(currentUser);
+                setTrainedAssets(Array.isArray(trainedAssetsData) ? trainedAssetsData : []);
+            } catch (error) {
+                console.warn('Failed to fetch trained assets:', error);
+                setTrainedAssets([]);
+            }
 
         } catch (error) {
             console.error("Failed to fetch data:", error);

@@ -14,8 +14,8 @@ import subprocess
 import uuid
 import json
 
-from database import get_database
-from auth_utils import get_current_user
+from api.database import get_database
+from api.auth_utils import get_current_user
 import logging
 
 # Configure logging

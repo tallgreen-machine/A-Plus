@@ -10,8 +10,8 @@ from datetime import timedelta
 import psycopg2.extras
 import logging
 
-from database import get_database
-from auth_utils import create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
+from api.database import get_database
+from api.auth_utils import create_access_token, hash_password, verify_password, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Configure logging
 log = logging.getLogger(__name__)

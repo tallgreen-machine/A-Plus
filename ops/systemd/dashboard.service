@@ -1,10 +1,10 @@
 [Unit]
-Description=Trad Web Dashboard
+Description=TradePulse IQ FastAPI Dashboard
 After=network.target
 
 [Service]
-ExecStart=/srv/trad/dashboard/.venv/bin/python3 /srv/trad/dashboard/app.py
-WorkingDirectory=/srv/trad/dashboard
+ExecStart=/srv/trad/.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/srv/trad
 Restart=always
 User=root
 Group=root

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Test Page</title>
+</head>
+<body>
+    <h1>API Test Results</h1>
+    <div id="results"></div>
+    
+    <script>
+        async function testAPIs() {
+            const results = document.getElementById('results');
+            
+            try {
+                // Test portfolio API
+                console.log('Testing portfolio API...');
+                const portfolioResponse = await fetch('/api/portfolio/test');
+                const portfolioData = await portfolioResponse.json();
+                console.log('Portfolio data:', portfolioData);
+                
+                results.innerHTML += '<h2>Portfolio API:</h2><pre>' + JSON.stringify(portfolioData, null, 2) + '</pre>';
+                
+                // Test trades API
+                console.log('Testing trades API...');
+                const tradesResponse = await fetch('/api/trades/test');
+                const tradesData = await tradesResponse.json();
+                console.log('Trades data:', tradesData);
+                
+                results.innerHTML += '<h2>Trades API:</h2><pre>' + JSON.stringify(tradesData, null, 2) + '</pre>';
+                
+                // Test if APIs return expected structure
+                if (portfolioData.portfolio && portfolioData.portfolio.equity) {
+                    results.innerHTML += '<h2>✅ Portfolio API returns equity: ' + portfolioData.portfolio.equity + '</h2>';
+                } else {
+                    results.innerHTML += '<h2>❌ Portfolio API missing equity data</h2>';
+                }
+                
+            } catch (error) {
+                console.error('API test error:', error);
+                results.innerHTML += '<h2>❌ Error:</h2><pre>' + error + '</pre>';
+            }
+        }
+        
+        // Run tests when page loads
+        testAPIs();
+    </script>
+</body>
+</html>

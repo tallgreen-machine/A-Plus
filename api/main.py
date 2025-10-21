@@ -12,13 +12,13 @@ import os
 import logging
 
 # Import API routers
-from auth import router as auth_router
-from portfolio import router as portfolio_router
-from trades import router as trades_router
-from patterns import router as patterns_router
-from training import router as training_router
-from exchanges import router as exchanges_router
-from analytics import router as analytics_router
+from api.auth import router as auth_router
+from api.portfolio import router as portfolio_router
+from api.trades import router as trades_router
+from api.patterns import router as patterns_router
+from api.training import router as training_router
+from api.exchanges import router as exchanges_router
+from api.analytics import router as analytics_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -54,13 +54,18 @@ app.include_router(training_router, tags=["Training"])
 app.include_router(exchanges_router, tags=["Exchanges"])
 app.include_router(analytics_router, tags=["Analytics"])
 
+# API test page for debugging
+@app.get("/test")
+async def serve_test_page():
+    return FileResponse("api-test.html")
+
 # Serve React app at root
 @app.get("/")
 async def serve_react_app():
-    return FileResponse("static/index.html")
+    return FileResponse("api/static/index.html")
 
-# Mount static files for React app assets
-app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
+# Mount static files for React app assets  
+app.mount("/assets", StaticFiles(directory="api/static/assets"), name="assets")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

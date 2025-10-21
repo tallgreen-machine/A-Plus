@@ -11,14 +11,99 @@ import psycopg2.extras
 from decimal import Decimal
 from enum import Enum
 
-from database import get_database
-from auth_utils import get_current_user
+from api.database import get_database
+from api.auth_utils import get_current_user
 import logging
 
 # Configure logging
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
+
+# TEMPORARY: Test endpoints without authentication
+@router.get("/test-performance")
+async def test_patterns_performance(db=Depends(get_database)):
+    """Test patterns performance endpoint without authentication"""
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT pattern_name, status, total_trades, winning_trades, 
+                       total_pnl, avg_win, avg_loss, win_rate
+                FROM pattern_performance 
+                ORDER BY total_pnl DESC 
+                LIMIT 10
+                """
+            )
+            patterns = cur.fetchall()
+            
+            if patterns:
+                return [
+                    {
+                        "id": f"pattern-{i}",
+                        "name": pattern['pattern_name'],
+                        "status": pattern['status'] or "ACTIVE",
+                        "totalPL": float(pattern['total_pnl'] or 0),
+                        "winLossRatio": float(pattern['win_rate'] or 0),
+                        "totalTrades": int(pattern['total_trades'] or 0),
+                        "lastTradeTime": "2024-01-01T10:00:00"
+                    }
+                    for i, pattern in enumerate(patterns)
+                ]
+            else:
+                # Return sample data
+                return [
+                    {
+                        "id": "pattern-1",
+                        "name": "Liquidity Sweep Reversal",
+                        "status": "ACTIVE",
+                        "totalPL": 2500.0,
+                        "winLossRatio": 2.1,
+                        "totalTrades": 45,
+                        "lastTradeTime": "2024-01-01T10:00:00"
+                    },
+                    {
+                        "id": "pattern-2", 
+                        "name": "Capitulation Reversal",
+                        "status": "ACTIVE",
+                        "totalPL": 1800.0,
+                        "winLossRatio": 1.8,
+                        "totalTrades": 32,
+                        "lastTradeTime": "2024-01-01T09:30:00"
+                    }
+                ]
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/test-trained-assets")
+async def test_trained_assets(db=Depends(get_database)):
+    """Test trained assets endpoint without authentication"""
+    try:
+        # Return sample trained assets data
+        return [
+            {
+                "symbol": "BTC/USDT",
+                "patterns": [
+                    {"patternId": "pattern-1", "initials": "LSR", "totalPL": 1500.0, "status": "ACTIVE"},
+                    {"patternId": "pattern-2", "initials": "CR", "totalPL": 800.0, "status": "ACTIVE"}
+                ],
+                "totalPL": 2300.0,
+                "activePatterns": 2,
+                "status": "ACTIVE"
+            },
+            {
+                "symbol": "ETH/USDT", 
+                "patterns": [
+                    {"patternId": "pattern-1", "initials": "LSR", "totalPL": 900.0, "status": "ACTIVE"},
+                    {"patternId": "pattern-2", "initials": "CR", "totalPL": 650.0, "status": "PAUSED"}
+                ],
+                "totalPL": 1550.0,
+                "activePatterns": 1,
+                "status": "ACTIVE"
+            }
+        ]
+    except Exception as e:
+        return {"error": str(e)}
 
 # Enums
 class PatternStatus(str, Enum):

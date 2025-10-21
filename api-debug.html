@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Debug Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; border-left: 4px solid #007acc; }
+        .error { border-left-color: #ff4444; background: #ffe6e6; }
+        .success { border-left-color: #44ff44; background: #e6ffe6; }
+    </style>
+</head>
+<body>
+    <h1>TradePulse API Debug Test</h1>
+    <button onclick="testAPIs()">Test All APIs</button>
+    <div id="results"></div>
+
+    <script>
+        async function testAPIs() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="result">Testing APIs...</div>';
+            
+            const tests = [
+                { name: 'Portfolio Test', url: '/api/portfolio/test' },
+                { name: 'Trades Test', url: '/api/trades/test' },
+                { name: 'Status Test', url: '/api/status' }
+            ];
+            
+            for (const test of tests) {
+                try {
+                    console.log(`Testing ${test.name}: ${test.url}`);
+                    const response = await fetch(test.url);
+                    console.log(`Response status: ${response.status}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log(`Response data:`, data);
+                    
+                    resultsDiv.innerHTML += `
+                        <div class="result success">
+                            <strong>${test.name}</strong>: SUCCESS<br>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } catch (error) {
+                    console.error(`Error testing ${test.name}:`, error);
+                    resultsDiv.innerHTML += `
+                        <div class="result error">
+                            <strong>${test.name}</strong>: ERROR<br>
+                            ${error.message}
+                        </div>
+                    `;
+                }
+            }
+        }
+        
+        // Auto-run on page load
+        window.onload = testAPIs;
+    </script>
+</body>
+</html>

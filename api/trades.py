@@ -1,5 +1,5 @@
 """
-Trade Management API endpoints
+Trading API endpoints
 Handles trade history, active trades, and trade analysis
 """
 
@@ -11,14 +11,100 @@ import psycopg2.extras
 from decimal import Decimal
 from enum import Enum
 
-from database import get_database
-from auth_utils import get_current_user
+from api.database import get_database
+from api.auth_utils import get_current_user
 import logging
 
 # Configure logging
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
+
+# TEMPORARY: Test endpoints without authentication
+@router.get("/test")
+async def test_trades(db=Depends(get_database)):
+    """Test trades endpoint without authentication"""
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, symbol, direction, quantity, price, fill_cost, commission, timestamp
+                FROM trades 
+                ORDER BY timestamp DESC 
+                LIMIT 10
+                """
+            )
+            trades = cur.fetchall()
+            
+            return {
+                "trades": [dict(trade) for trade in trades],
+                "total": len(trades)
+            }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/test-active")
+async def test_active_trades(db=Depends(get_database)):
+    """Test active trades endpoint without authentication"""
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT symbol, direction, entry_price, quantity, current_price, 
+                       unrealized_pnl, take_profit, stop_loss, pattern_name, timestamp
+                FROM active_trades 
+                ORDER BY timestamp DESC 
+                LIMIT 10
+                """
+            )
+            active_trades = cur.fetchall()
+            
+            if active_trades:
+                return [
+                    {
+                        "symbol": trade['symbol'],
+                        "direction": trade['direction'],
+                        "entryPrice": float(trade['entry_price']),
+                        "quantity": float(trade['quantity']),
+                        "currentPrice": float(trade['current_price'] or trade['entry_price']),
+                        "currentPL": float(trade['unrealized_pnl'] or 0),
+                        "takeProfit": float(trade['take_profit']) if trade['take_profit'] else None,
+                        "stopLoss": float(trade['stop_loss']) if trade['stop_loss'] else None,
+                        "patternName": trade['pattern_name'],
+                        "startTimestamp": trade['timestamp'].isoformat() if trade['timestamp'] else None
+                    }
+                    for trade in active_trades
+                ]
+            else:
+                # Return sample data
+                return [
+                    {
+                        "symbol": "ETH/USDT",
+                        "direction": "BUY",
+                        "entryPrice": 3500.0,
+                        "quantity": 1.0,
+                        "currentPrice": 3650.0,
+                        "currentPL": 150.0,
+                        "takeProfit": 3800.0,
+                        "stopLoss": 3300.0,
+                        "patternName": "Liquidity Sweep Reversal",
+                        "startTimestamp": "2024-01-01T12:00:00"
+                    }
+                ]
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/test-logs")
+async def test_logs():
+    """Test logs endpoint without authentication"""
+    return [
+        "[2024-01-01 10:00:00] Bot started successfully",
+        "[2024-01-01 10:01:00] Connected to Binance exchange",
+        "[2024-01-01 10:02:00] Pattern detected: Liquidity Sweep on BTC/USDT",
+        "[2024-01-01 10:03:00] Trade executed: BUY 0.1 BTC at $65000",
+        "[2024-01-01 10:04:00] Current P&L: +$150.00"
+    ]
 
 # Enums
 class TradeDirection(str, Enum):

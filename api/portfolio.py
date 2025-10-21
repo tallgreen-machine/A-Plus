@@ -11,8 +11,8 @@ import psycopg2.extras
 from decimal import Decimal
 import logging
 
-from database import get_database
-from auth_utils import get_current_user
+from api.database import get_database
+from api.auth_utils import get_current_user
 
 # Configure logging
 log = logging.getLogger(__name__)

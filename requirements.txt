@@ -5,3 +5,8 @@ backtrader
 matplotlib
 pandas-ta
 psycopg2-binary
+fastapi
+uvicorn
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart

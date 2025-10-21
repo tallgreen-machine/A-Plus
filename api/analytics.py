@@ -11,8 +11,8 @@ import psycopg2.extras
 from decimal import Decimal
 from enum import Enum
 
-from database import get_database
-from auth_utils import get_current_user
+from api.database import get_database
+from api.auth_utils import get_current_user
 import logging
 
 # Configure logging
