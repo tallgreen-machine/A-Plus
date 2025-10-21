@@ -22,28 +22,56 @@ router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 # TEMPORARY: Test endpoint without authentication
 @router.get("/test")
 async def test_portfolio(db=Depends(get_database)):
-    """Test portfolio endpoint without authentication"""
+    """Test portfolio endpoint without authentication - returns real data"""
     try:
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
-            # Get latest portfolio snapshot for any user (test)
+            # Get latest portfolio snapshot for user 1 (admin)
             cur.execute(
                 """
-                SELECT timestamp, total_equity, cash_balance, market_value, unrealized_pnl, realized_pnl
+                SELECT timestamp, total_equity, cash_balance, market_value, unrealized_pnl, realized_pnl, total_pnl
                 FROM portfolio_snapshots 
+                WHERE user_id = 1
                 ORDER BY timestamp DESC 
                 LIMIT 1
                 """
             )
             portfolio_row = cur.fetchone()
             
+            # Get holdings for user 1
+            cur.execute(
+                """
+                SELECT symbol, quantity, avg_cost, current_price, market_value, unrealized_pnl, unrealized_pnl_percent
+                FROM holdings 
+                WHERE user_id = 1 AND quantity > 0
+                ORDER BY market_value DESC
+                """
+            )
+            holdings_rows = cur.fetchall()
+            
             if portfolio_row:
+                holdings = []
+                for holding in holdings_rows:
+                    holdings.append({
+                        "symbol": holding['symbol'],
+                        "quantity": float(holding['quantity'] or 0),
+                        "avgCost": float(holding['avg_cost'] or 0),
+                        "currentPrice": float(holding['current_price'] or 0),
+                        "marketValue": float(holding['market_value'] or 0),
+                        "unrealizedPL": float(holding['unrealized_pnl'] or 0),
+                        "unrealizedPLPercent": float(holding['unrealized_pnl_percent'] or 0)
+                    })
+                
                 return {
                     "portfolio": {
-                        "timestamp": portfolio_row['timestamp'].isoformat() if portfolio_row['timestamp'] else None,
+                        "timestamp": portfolio_row['timestamp'].isoformat() if portfolio_row['timestamp'] else datetime.now().isoformat(),
                         "equity": float(portfolio_row['total_equity'] or 0),
-                        "cash": float(portfolio_row['cash_balance'] or 0)
+                        "cash": float(portfolio_row['cash_balance'] or 0),
+                        "marketValue": float(portfolio_row['market_value'] or 0),
+                        "unrealizedPL": float(portfolio_row['unrealized_pnl'] or 0),
+                        "realizedPL": float(portfolio_row['realized_pnl'] or 0),
+                        "totalPL": float(portfolio_row['total_pnl'] or 0)
                     },
-                    "holdings": []
+                    "holdings": holdings
                 }
             else:
                 return {

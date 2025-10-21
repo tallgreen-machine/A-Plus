@@ -23,15 +23,18 @@ router = APIRouter(prefix="/api/patterns", tags=["patterns"])
 # TEMPORARY: Test endpoints without authentication
 @router.get("/test-performance")
 async def test_patterns_performance(db=Depends(get_database)):
-    """Test patterns performance endpoint without authentication"""
+    """Test patterns performance endpoint without authentication - returns real data"""
     try:
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(
                 """
-                SELECT pattern_name, status, total_trades, winning_trades, 
-                       total_pnl, avg_win, avg_loss, win_rate
-                FROM pattern_performance 
-                ORDER BY total_pnl DESC 
+                SELECT p.id, p.name, p.is_active, pp.total_trades, pp.winning_trades, 
+                       pp.total_pnl, pp.avg_win, pp.avg_loss, pp.win_rate, pp.profit_factor,
+                       pp.last_trade_at
+                FROM patterns p
+                LEFT JOIN pattern_performance pp ON p.id = pp.pattern_id AND pp.user_id = 1
+                WHERE p.is_active = true
+                ORDER BY pp.total_pnl DESC NULLS LAST
                 LIMIT 10
                 """
             )
@@ -40,13 +43,16 @@ async def test_patterns_performance(db=Depends(get_database)):
             if patterns:
                 return [
                     {
-                        "id": f"pattern-{i}",
-                        "name": pattern['pattern_name'],
-                        "status": pattern['status'] or "ACTIVE",
+                        "id": f"pattern-{pattern['id']}",
+                        "name": pattern['name'],
+                        "status": "ACTIVE" if pattern['is_active'] else "PAUSED",
                         "totalPL": float(pattern['total_pnl'] or 0),
-                        "winLossRatio": float(pattern['win_rate'] or 0),
+                        "winLossRatio": float((pattern['avg_win'] or 0) / abs(pattern['avg_loss'] or 1)),
                         "totalTrades": int(pattern['total_trades'] or 0),
-                        "lastTradeTime": "2024-01-01T10:00:00"
+                        "winRate": float(pattern['win_rate'] or 0),
+                        "profitFactor": float(pattern['profit_factor'] or 0),
+                        "lastTradeTime": pattern['last_trade_at'].isoformat() if pattern['last_trade_at'] else None,
+                        "parameters": {}
                     }
                     for i, pattern in enumerate(patterns)
                 ]

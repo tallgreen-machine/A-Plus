@@ -96,8 +96,8 @@ BEGIN
     
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trades' AND column_name='executed_at') THEN
         ALTER TABLE trades ADD COLUMN executed_at TIMESTAMP WITH TIME ZONE;
-        -- Copy timestamp to executed_at for existing records
-        UPDATE trades SET executed_at = timestamp WHERE executed_at IS NULL;
+        -- Copy created_at to executed_at for existing records
+        UPDATE trades SET executed_at = created_at WHERE executed_at IS NULL;
     END IF;
     
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='trades' AND column_name='pnl_percent') THEN

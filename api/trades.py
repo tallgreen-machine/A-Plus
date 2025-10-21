@@ -23,22 +23,38 @@ router = APIRouter(prefix="/api/trades", tags=["trades"])
 # TEMPORARY: Test endpoints without authentication
 @router.get("/test")
 async def test_trades(db=Depends(get_database)):
-    """Test trades endpoint without authentication"""
+    """Test trades endpoint without authentication - returns real data"""
     try:
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(
                 """
-                SELECT id, symbol, direction, quantity, price, fill_cost, commission, timestamp
+                SELECT id, wallet_id, symbol, trade_type, entry_price, exit_price, 
+                       pnl_percentage, entry_time, exit_time, pattern_name
                 FROM trades 
-                ORDER BY timestamp DESC 
+                WHERE user_id = 1
+                ORDER BY entry_time DESC 
                 LIMIT 10
                 """
             )
             trades = cur.fetchall()
             
+            formatted_trades = []
+            for trade in trades:
+                formatted_trades.append({
+                    "id": trade['id'],
+                    "timestamp": trade['entry_time'].isoformat() if trade['entry_time'] else None,
+                    "symbol": trade['symbol'],
+                    "direction": trade['trade_type'],
+                    "entryPrice": float(trade['entry_price'] or 0),
+                    "exitPrice": float(trade['exit_price'] or 0) if trade['exit_price'] else None,
+                    "pnlPercent": float(trade['pnl_percentage'] or 0),
+                    "patternName": trade['pattern_name'],
+                    "status": "CLOSED" if trade['exit_time'] else "OPEN"
+                })
+            
             return {
-                "trades": [dict(trade) for trade in trades],
-                "total": len(trades)
+                "trades": formatted_trades,
+                "total": len(formatted_trades)
             }
 
     except Exception as e:
