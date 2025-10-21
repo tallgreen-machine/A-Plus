@@ -23,27 +23,27 @@ class Tier1Patterns:
         self.symbol = symbol
         self.db_conn = get_db_conn()
 
-    def fetch_recent_data(self, limit=50):
-        """Fetches the most recent N candles for the symbol."""
+    def fetch_recent_data(self, limit=50, timeframe='5m'):
+        """Fetches the most recent N candles for the symbol from enhanced database."""
         query = """
-            SELECT ts, open, high, low, close, volume
-            FROM market_data
-            WHERE symbol = %s
-            ORDER BY ts DESC
+            SELECT timestamp, open, high, low, close, volume
+            FROM market_data_enhanced
+            WHERE symbol = %s AND timeframe = %s
+            ORDER BY timestamp DESC
             LIMIT %s;
         """
         with self.db_conn.cursor() as cur:
-            cur.execute(query, (self.symbol, limit))
+            cur.execute(query, (self.symbol, timeframe, limit))
             data = cur.fetchall()
         
         if not data:
             return pd.DataFrame()
         
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
         # Ensure numeric columns are of a numeric type
         for col in ['open', 'high', 'low', 'close', 'volume']:
             df[col] = pd.to_numeric(df[col])
-        df = df.sort_values('ts', ascending=True).reset_index(drop=True)
+        df = df.sort_values('timestamp', ascending=True).reset_index(drop=True)
         return df
 
     def check_for_liquidity_sweep(self):
@@ -84,7 +84,7 @@ class Tier1Patterns:
                         last_candle['close'] > last_candle['open']) # Is a green candle
 
         if is_engulfing:
-            print(f"LIQUIDITY SWEEP DETECTED on {self.symbol} at {last_candle['ts']}")
+            print(f"LIQUIDITY SWEEP DETECTED on {self.symbol} at {last_candle['timestamp']}")
             return {'pattern_name': 'Liquidity Sweep', 'confidence': 0.71, 'details': {'price': last_candle['close'], 'liquidity_level': liquidity_level}}
         
         return None

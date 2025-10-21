@@ -47,36 +47,39 @@ class CryptoTradingEnv(gym.Env):
         log.info("CryptoTradingEnv initialized.")
 
     def _load_market_data(self):
-        """Loads historical price data from the database."""
-        log.info("Loading market data from database...")
+        """Loads historical price data from the enhanced database."""
+        log.info("Loading market data from enhanced database...")
         with get_db_conn() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # Use 5m timeframe as default for training (good balance of detail and speed)
+                timeframe = getattr(self, 'timeframe', '5m')
+                
                 # Get all timestamps for the first symbol to establish the timeline
                 cur.execute(
                     """
-                    SELECT DISTINCT timestamp FROM market_data
-                    WHERE symbol = %s ORDER BY timestamp
+                    SELECT DISTINCT timestamp FROM market_data_enhanced
+                    WHERE symbol = %s AND timeframe = %s ORDER BY timestamp
                     """,
-                    (self.symbols[0],)
+                    (self.symbols[0], timeframe)
                 )
                 self._timestamps = [row['timestamp'] for row in cur.fetchall()]
 
                 if not self._timestamps:
-                    log.error("No market data found for the primary symbol. Cannot proceed.")
+                    log.error(f"No market data found for the primary symbol with timeframe {timeframe}. Cannot proceed.")
                     return
 
                 # Load close prices for all symbols
                 for symbol in self.symbols:
                     cur.execute(
                         """
-                        SELECT timestamp, close FROM market_data
-                        WHERE symbol = %s ORDER BY timestamp
+                        SELECT timestamp, close FROM market_data_enhanced
+                        WHERE symbol = %s AND timeframe = %s ORDER BY timestamp
                         """,
-                        (symbol,)
+                        (symbol, timeframe)
                     )
                     # Store prices in a dictionary for quick lookup by timestamp
                     self._prices[symbol] = {row['timestamp']: float(row['close']) for row in cur.fetchall()}
-        log.info(f"Loaded {len(self._timestamps)} timestamps and price data for {len(self.symbols)} symbols.")
+        log.info(f"Loaded {len(self._timestamps)} timestamps and price data for {len(self.symbols)} symbols using {timeframe} timeframe.")
 
     def _load_active_patterns(self):
         """Loads the active patterns from the JSON file."""

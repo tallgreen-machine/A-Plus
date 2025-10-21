@@ -38,18 +38,18 @@ class RealTrainingRunner:
             conn = get_db_conn()
             cur = conn.cursor()
             
-            # Get summary statistics
+            # Get summary statistics from enhanced database
             cur.execute("""
                 SELECT COUNT(*), COUNT(DISTINCT symbol), COUNT(DISTINCT exchange),
                        MIN(timestamp), MAX(timestamp)
-                FROM market_data
+                FROM market_data_enhanced
             """)
             total_records, unique_symbols, unique_exchanges, min_ts, max_ts = cur.fetchone()
             
             # Get top symbols by data volume
             cur.execute("""
                 SELECT symbol, COUNT(*) as records
-                FROM market_data 
+                FROM market_data_enhanced 
                 GROUP BY symbol 
                 ORDER BY records DESC 
                 LIMIT 5
@@ -59,8 +59,8 @@ class RealTrainingRunner:
             
             # Get sample of recent data to verify quality
             cur.execute("""
-                SELECT symbol, exchange, timestamp, open, high, low, close, volume
-                FROM market_data 
+                SELECT symbol, exchange, timeframe, timestamp, open, high, low, close, volume
+                FROM market_data_enhanced 
                 ORDER BY timestamp DESC 
                 LIMIT 3
             """)
