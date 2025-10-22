@@ -20,28 +20,58 @@ from utils.logger import log as logger
 
 
 @dataclass
-class TrainedAsset:
-    """Represents a trained ML model for a specific token-exchange combination"""
+class TrainedStrategy:
+    """
+    Represents a trained ML model for a specific strategy with multi-dimensional training
+    
+    Architecture:
+    - Each strategy (HTF Sweep, Volume Breakout, etc.) has optimized parameters
+    - Training occurs across multiple dimensions: token/exchange, market regime, timeframe
+    - Strategy parameters are what get optimized, not patterns
+    """
     symbol: str
     exchange: str
-    pattern_type: str
+    strategy_id: str  # 'htf_sweep', 'volume_breakout', 'divergence_capitulation'
+    market_regime: str  # 'bull', 'bear', 'sideways'
+    timeframe: str  # '1m', '5m', '1h', '4h', '1d'
     model_version: str
     accuracy: float
     training_samples: int
     last_trained: str
+    strategy_parameters: Dict[str, float]  # Optimized strategy parameters
     feature_importance: Dict[str, float]
+    performance_metrics: Dict[str, float]
+    metadata: Dict[str, Any]
+
+
+@dataclass 
+class TrainedAsset:
+    """
+    Complete collection of trained strategies for a token-exchange pair
+    
+    A Trained Asset contains all trained strategies across:
+    - All supported strategies (HTF Sweep, Volume Breakout, Divergence Capitulation)
+    - All market regimes (bull, bear, sideways)
+    - All timeframes (1m, 5m, 1h, 4h, 1d)
+    """
+    symbol: str
+    exchange: str
+    strategies: Dict[str, TrainedStrategy]  # Key: strategy_id_regime_timeframe
+    last_updated: str
+    total_strategies: int
+    coverage_metrics: Dict[str, float]
     metadata: Dict[str, Any]
 
 
 class TrainedAssetsManager:
     """
-    Manages trained ML models per token-exchange combination
+    Manages trained ML strategies per token-exchange combination with multi-dimensional training
     
-    Design Philosophy:
-    - Each token-exchange pair gets its own trained models
-    - Models are pattern-specific (liquidity_sweep, fair_value_gap, etc.)
-    - Completely modular - supports any number of exchanges/tokens
-    - Models auto-retrain when new data is available
+    New Architecture:
+    - Strategies (not patterns) with parameters get trained
+    - Multi-dimensional: token/exchange + market regime + timeframe  
+    - Strategy Management: comprehensive parameter optimization
+    - Trained Asset = collection of all trained strategies for a symbol/exchange
     """
     
     def __init__(self, models_dir: str = "/workspaces/Trad/ml/trained_assets"):
@@ -52,14 +82,27 @@ class TrainedAssetsManager:
         self.trained_assets: Dict[str, TrainedAsset] = {}
         self.available_combinations: List[Tuple[str, str]] = []
         
-        # Pattern types we train models for
-        self.pattern_types = [
-            'liquidity_sweep',
-            'fair_value_gap', 
-            'volume_confirmation',
-            'divergence_strength',
-            'breakout_momentum'
+        # Strategy definitions (replaces pattern_types)
+        self.supported_strategies = [
+            'htf_sweep',           # HTF Sweep: 1h→5m liquidity sweep
+            'volume_breakout',     # Volume Breakout: ATR-based consolidation
+            'divergence_capitulation'  # Divergence Capitulation: trend + divergence
         ]
+        
+        # Market regime definitions
+        self.market_regimes = ['bull', 'bear', 'sideways']
+        
+        # Timeframe definitions  
+        self.timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
+        
+        # Storage for individual trained strategies (strategy_key -> TrainedStrategy)
+        self.trained_strategies: Dict[str, TrainedStrategy] = {}
+        
+        logger.info(f"🚀 TrainedAssetsManager initialized:")
+        logger.info(f"   📈 Strategies: {len(self.supported_strategies)}")
+        logger.info(f"   🌊 Market regimes: {len(self.market_regimes)}")
+        logger.info(f"   ⏰ Timeframes: {len(self.timeframes)}")
+        logger.info(f"   🎯 Total combinations per asset: {len(self.supported_strategies) * len(self.market_regimes) * len(self.timeframes)}")
         
         # Initialize system
         self._discover_available_combinations()
@@ -113,16 +156,29 @@ class TrainedAssetsManager:
         
         logger.info(f"📥 Loaded {assets_loaded} existing trained assets")
     
-    def _get_asset_key(self, symbol: str, exchange: str, pattern_type: str) -> str:
-        """Generate unique key for a trained asset"""
-        return f"{exchange}_{symbol}_{pattern_type}".replace("/", "_").replace("-", "_")
+    def _get_asset_key(self, symbol: str, exchange: str) -> str:
+        """Generate unique key for a trained asset (collection of strategies)"""
+        return f"{exchange}_{symbol}".replace("/", "_").replace("-", "_")
     
-    def get_asset_path(self, symbol: str, exchange: str, pattern_type: str) -> Tuple[Path, Path]:
-        """Get file paths for model and metadata"""
-        base_name = self._get_asset_key(symbol, exchange, pattern_type)
+    def _get_strategy_key(self, symbol: str, exchange: str, strategy_id: str, 
+                         market_regime: str, timeframe: str) -> str:
+        """Generate unique key for an individual trained strategy"""
+        return f"{exchange}_{symbol}_{strategy_id}_{market_regime}_{timeframe}".replace("/", "_").replace("-", "_")
+    
+    def get_strategy_path(self, symbol: str, exchange: str, strategy_id: str,
+                         market_regime: str, timeframe: str) -> Tuple[Path, Path]:
+        """Get file paths for individual strategy model and metadata"""
+        base_name = self._get_strategy_key(symbol, exchange, strategy_id, market_regime, timeframe)
         model_path = self.models_dir / f"{base_name}.pkl"
         metadata_path = self.models_dir / f"{base_name}.json"
         return model_path, metadata_path
+    
+    def get_asset_path(self, symbol: str, exchange: str) -> Tuple[Path, Path]:
+        """Get file paths for complete trained asset (all strategies collection)"""
+        base_name = self._get_asset_key(symbol, exchange)
+        asset_path = self.models_dir / f"{base_name}_asset.json"
+        summary_path = self.models_dir / f"{base_name}_summary.json"
+        return asset_path, summary_path
     
     def train_asset(self, symbol: str, exchange: str, pattern_type: str, 
                    min_samples: int = 500) -> Optional[TrainedAsset]:
@@ -467,6 +523,285 @@ class TrainedAssetsManager:
         logger.info(f"   🎯 Successfully trained: {trained_count}")
         logger.info(f"   ❌ Failed: {failed_count}")
         logger.info(f"   📊 Total assets: {len(self.trained_assets)}")
+    
+    
+    def get_strategy_parameters(self, symbol: str, exchange: str, strategy_id: str, 
+                               market_regime: str = None, timeframe: str = None) -> Optional[Dict[str, Any]]:
+        """
+        Get ML-optimized strategy parameters for a specific strategy on a symbol/exchange combination
+        
+        This is the key integration point between ML and A+ strategies.
+        Returns optimized strategy parameters rather than pattern confidence scores.
+        
+        Args:
+            symbol: Trading symbol (e.g., 'BTC/USDT')
+            exchange: Exchange name (e.g., 'binanceus') 
+            strategy_id: Strategy identifier ('htf_sweep', 'volume_breakout', 'divergence_capitulation')
+            market_regime: Optional market regime ('bull', 'bear', 'sideways') - auto-detected if None
+            timeframe: Optional timeframe ('1m', '5m', '1h') - uses strategy default if None
+            
+        Returns:
+            Dictionary of optimized strategy parameters or None if not trained
+        """
+        # Auto-detect market regime if not provided
+        if market_regime is None:
+            market_regime = self._detect_current_market_regime(symbol, exchange)
+        
+        # Use strategy default timeframe if not provided
+        if timeframe is None:
+            timeframe = self._get_strategy_default_timeframe(strategy_id)
+        
+        strategy_key = self._get_strategy_key(symbol, exchange, strategy_id, market_regime, timeframe)
+        
+        if strategy_key not in self.trained_strategies:
+            logger.warning(f"⚠️ No trained strategy for {exchange}/{symbol} - {strategy_id} ({market_regime}, {timeframe})")
+            return self._get_default_strategy_parameters(strategy_id)
+        
+        trained_strategy = self.trained_strategies[strategy_key]
+        
+        # Extract optimized strategy parameters based on ML training
+        try:
+            # Base parameters optimized by ML performance
+            optimized_params = {
+                'confidence_threshold': max(0.6, trained_strategy.accuracy),
+                'training_accuracy': trained_strategy.accuracy,
+                'sample_size': trained_strategy.training_samples,
+                'market_regime': market_regime,
+                'timeframe': timeframe,
+                'last_trained': trained_strategy.last_trained
+            }
+            
+            # Add ML-optimized strategy parameters
+            optimized_params.update(trained_strategy.strategy_parameters)
+            
+            # Strategy-specific parameter optimization
+            if strategy_id == 'htf_sweep':
+                # HTF Sweep strategy parameters optimized by ML
+                optimized_params.update({
+                    'swing_lookback_periods': self._optimize_swing_lookback(trained_strategy),
+                    'risk_reward_ratio': self._optimize_risk_reward(trained_strategy),
+                    'min_sweep_percentage': self._optimize_sweep_percentage(trained_strategy),
+                    'structure_shift_confirmation': trained_strategy.accuracy > 0.75
+                })
+            
+            elif strategy_id == 'volume_breakout':
+                # Volume Breakout strategy parameters
+                optimized_params.update({
+                    'consolidation_period': self._optimize_consolidation_period(trained_strategy),
+                    'volume_sma_period': 20,  # Standard but could be optimized
+                    'volume_multiplier': self._optimize_volume_multiplier(trained_strategy),
+                    'atr_multiplier': self._optimize_atr_multiplier(trained_strategy)
+                })
+            
+            elif strategy_id == 'divergence_capitulation':
+                # Divergence Capitulation strategy parameters
+                optimized_params.update({
+                    'rsi_period': 14,  # Could be optimized based on asset performance
+                    'ema_fast_period': 50,
+                    'ema_slow_period': 200,
+                    'volume_spike_multiplier': self._optimize_volume_spike(trained_strategy),
+                    'divergence_lookback': self._optimize_divergence_lookback(trained_strategy)
+                })
+            
+            logger.debug(f"📊 Retrieved optimized strategy parameters for {exchange}/{symbol} - {strategy_id} ({market_regime}, {timeframe})")
+            return optimized_params
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting strategy parameters for {strategy_key}: {e}")
+            return self._get_default_strategy_parameters(strategy_id)
+    
+    def _get_default_strategy_parameters(self, strategy_id: str) -> Dict[str, Any]:
+        """Get default strategy parameters when no trained model is available"""
+        defaults = {
+            'htf_sweep': {
+                'swing_lookback_periods': 20,
+                'risk_reward_ratio': 2.0,
+                'min_sweep_percentage': 0.5,
+                'structure_shift_confirmation': True,
+                'confidence_threshold': 0.7
+            },
+            'volume_breakout': {
+                'consolidation_period': 10,
+                'volume_sma_period': 20,
+                'volume_multiplier': 2.5,
+                'atr_multiplier': 1.5,
+                'confidence_threshold': 0.65
+            },
+            'divergence_capitulation': {
+                'rsi_period': 14,
+                'ema_fast_period': 50,
+                'ema_slow_period': 200,
+                'volume_spike_multiplier': 3.0,
+                'divergence_lookback': 50,
+                'confidence_threshold': 0.75
+            }
+        }
+        
+        return defaults.get(strategy_id, {'confidence_threshold': 0.6})
+    
+    def _detect_current_market_regime(self, symbol: str, exchange: str) -> str:
+        """Detect current market regime for the symbol/exchange pair"""
+        # TODO: Implement market regime detection logic
+        # For now, return default
+        return 'sideways'
+    
+    def _get_strategy_default_timeframe(self, strategy_id: str) -> str:
+        """Get default timeframe for each strategy"""
+        defaults = {
+            'htf_sweep': '5m',           # HTF Sweep operates on 5m primarily
+            'volume_breakout': '15m',    # Volume breakout works well on 15m
+            'divergence_capitulation': '1h'  # Divergence needs higher timeframe context
+        }
+        return defaults.get(strategy_id, '5m')
+        
+    def _optimize_swing_lookback(self, trained_strategy: TrainedStrategy) -> int:
+        """Optimize swing lookback periods based on trained strategy performance"""
+        base_lookback = 20
+        
+        # Adjust based on accuracy and sample size
+        if trained_strategy.accuracy > 0.85:
+            return max(15, base_lookback - 5)  # Shorter for high accuracy
+        elif trained_strategy.accuracy < 0.65:
+            return min(30, base_lookback + 10)  # Longer for lower accuracy
+        
+        return base_lookback
+    
+    def _optimize_risk_reward(self, trained_strategy: TrainedStrategy) -> float:
+        """Optimize risk-reward ratio based on trained strategy performance"""
+        base_rr = 2.5
+        
+        # Higher accuracy models can use more aggressive targets
+        if trained_strategy.accuracy > 0.85:
+            return min(3.0, base_rr + 0.5)
+        elif trained_strategy.accuracy < 0.65:
+            return max(2.0, base_rr - 0.5)
+        
+        return base_rr
+    
+    def _optimize_sweep_percentage(self, trained_strategy: TrainedStrategy) -> float:
+    
+    def _optimize_sweep_percentage(self, asset: TrainedAsset) -> float:
+        """Optimize minimum sweep percentage"""
+        base_percentage = 0.001  # 0.1%
+        
+        # More samples allow for tighter requirements
+        if trained_strategy.training_samples > 2000:
+            return base_percentage * 0.5  # Tighter for more data
+        elif trained_strategy.training_samples < 1000:
+            return base_percentage * 2.0  # Looser for less data
+        
+        return base_percentage
+    
+    def _optimize_consolidation_period(self, trained_strategy: TrainedStrategy) -> int:
+        """Optimize consolidation period for volume breakouts"""
+        base_period = 10
+        
+        if trained_strategy.accuracy > 0.8:
+            return max(8, base_period - 2)
+        elif trained_strategy.accuracy < 0.65:
+            return min(15, base_period + 5)
+        
+        return base_period
+    
+    def _optimize_volume_multiplier(self, trained_strategy: TrainedStrategy) -> float:
+        """Optimize volume confirmation multiplier"""
+        base_multiplier = 2.5
+        
+        # High accuracy models can be more selective
+        if trained_strategy.accuracy > 0.85:
+            return min(3.5, base_multiplier + 1.0)
+        elif trained_strategy.accuracy < 0.65:
+            return max(1.8, base_multiplier - 0.7)
+        
+        return base_multiplier
+    
+    def _optimize_atr_multiplier(self, trained_strategy: TrainedStrategy) -> float:
+        """Optimize ATR multiplier for consolidation detection"""
+        base_multiplier = 1.5
+        
+        if trained_strategy.accuracy > 0.8:
+            return max(1.2, base_multiplier - 0.3)
+        elif trained_strategy.accuracy < 0.65:
+            return min(2.0, base_multiplier + 0.5)
+        
+        return base_multiplier
+    
+    def _optimize_volume_spike(self, trained_strategy: TrainedStrategy) -> float:
+        """Optimize volume spike multiplier for divergence capitulation"""
+        base_multiplier = 3.0
+        
+        if trained_strategy.accuracy > 0.85:
+            return min(4.0, base_multiplier + 1.0)
+        elif trained_strategy.accuracy < 0.65:
+            return max(2.0, base_multiplier - 1.0)
+        
+        return base_multiplier
+    
+    def _optimize_divergence_lookback(self, trained_strategy: TrainedStrategy) -> int:
+        """Optimize divergence lookback period"""
+        base_lookback = 50
+        
+        if trained_strategy.accuracy > 0.8:
+            return max(40, base_lookback - 10)  # Shorter for high accuracy
+        elif trained_strategy.accuracy < 0.65:
+            return min(70, base_lookback + 20)  # Longer for lower accuracy
+        
+        return base_lookback
+    
+    def _optimize_volume_spike(self, asset: TrainedAsset) -> float:
+        """Optimize volume spike multiplier for divergence"""
+        base_spike = 3.0
+        
+        if asset.accuracy > 0.85:
+            return min(4.0, base_spike + 1.0)
+        elif asset.accuracy < 0.65:
+            return max(2.0, base_spike - 1.0)
+        
+        return base_spike
+    
+    def _optimize_divergence_lookback(self, asset: TrainedAsset) -> int:
+        """Optimize divergence lookback period"""
+        base_lookback = 10
+        
+        if asset.training_samples > 2000:
+            return max(8, base_lookback - 2)
+        elif asset.training_samples < 1000:
+            return min(15, base_lookback + 5)
+        
+        return base_lookback
+    
+    def _optimize_resistance_lookback(self, asset: TrainedAsset) -> int:
+        """Optimize resistance lookback for breakouts"""
+        base_lookback = 24
+        
+        if asset.accuracy > 0.8:
+            return max(20, base_lookback - 4)
+        elif asset.accuracy < 0.65:
+            return min(30, base_lookback + 6)
+        
+        return base_lookback
+    
+    def _optimize_breakout_percentage(self, asset: TrainedAsset) -> float:
+        """Optimize breakout confirmation percentage"""
+        base_percentage = 0.002  # 0.2%
+        
+        if asset.accuracy > 0.85:
+            return base_percentage * 0.5
+        elif asset.accuracy < 0.65:
+            return base_percentage * 2.0
+        
+        return base_percentage
+    
+    def _optimize_gap_threshold(self, asset: TrainedAsset) -> float:
+        """Optimize fair value gap size threshold"""
+        base_threshold = 0.005  # 0.5%
+        
+        if asset.accuracy > 0.8:
+            return base_threshold * 0.7
+        elif asset.accuracy < 0.65:
+            return base_threshold * 1.5
+        
+        return base_threshold
     
     def get_asset_summary(self) -> Dict[str, Any]:
         """Get summary of all trained assets"""
