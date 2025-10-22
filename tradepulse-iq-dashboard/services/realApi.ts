@@ -86,35 +86,51 @@ export async function getPortfolio(userId: string): Promise<PortfolioResponse> {
 }
 
 export async function getPortfolioHistory(userId: string, days: number = 30): Promise<EquityPoint[]> {
-    // TEMPORARY: Return empty array since /portfolio/history returns 403
-    return Promise.resolve([]);
+    try {
+        return await apiRequest<EquityPoint[]>(`/portfolio/history?days=${days}`);
+    } catch (error) {
+        console.error('Failed to fetch portfolio history:', error);
+        return [];
+    }
 }
 
 export async function getPerformance(userId: string): Promise<PerformanceMetrics> {
-    // TEMPORARY: Return mock performance data since /portfolio/performance returns 403
-    return Promise.resolve({
-        totalPL: { value: 2500.0, percentage: 0.025 },
-        todayPL: { value: 150.0, percentage: 0.0015 },
-        winRate: 0.68,
-        profitFactor: 1.45,
-        maxDrawdown: 0.08,
-        sharpeRatio: 1.2,
-        winLossRatio: 2.1,
-        avgProfit: 180.0,
-        avgLoss: -85.0,
-        totalTrades: 45
-    });
+    try {
+        return await apiRequest<PerformanceMetrics>('/portfolio/performance');
+    } catch (error) {
+        // Return null/undefined values instead of fake data
+        return Promise.resolve({
+            totalPL: { value: 0, percentage: 0 },
+            todayPL: { value: 0, percentage: 0 },
+            winRate: 0,
+            profitFactor: 0,
+            maxDrawdown: 0,
+            sharpeRatio: 0,
+            winLossRatio: 0,
+            avgProfit: 0,
+            avgLoss: 0,
+            totalTrades: 0
+        });
+    }
 }
 
-// Trade APIs - TEMPORARY: Using test endpoints
 export async function getTrades(userId: string, limit: number = 100): Promise<Trade[]> {
-    const response = await apiRequest<{trades: Trade[], total: number}>('/trades/test');
-    return response.trades || [];
+    try {
+        const response = await apiRequest<{trades: Trade[], total: number}>('/trades/test');
+        return response.trades || [];
+    } catch (error) {
+        console.error('Failed to fetch trades:', error);
+        return [];
+    }
 }
 
 export async function getActiveTrades(userId: string): Promise<ActiveTrade[]> {
-    // TEMPORARY: Return empty array since endpoint has database schema issues
-    return Promise.resolve([]);
+    try {
+        return await apiRequest<ActiveTrade[]>('/trades/active');
+    } catch (error) {
+        console.error('Failed to fetch active trades:', error);
+        return [];
+    }
 }
 
 export async function getStatus(): Promise<BotStatus> {
@@ -125,10 +141,13 @@ export async function getLogs(userId: string, limit: number = 100): Promise<stri
     return apiRequest<string[]>('/trades/test-logs');
 }
 
-// Pattern APIs - TEMPORARY: Using test endpoints  
 export async function getPatternsPerformance(userId: string): Promise<PatternPerformance[]> {
-    // TEMPORARY: Return empty array since endpoint has database schema issues
-    return Promise.resolve([]);
+    try {
+        return await apiRequest<PatternPerformance[]>('/patterns/performance');
+    } catch (error) {
+        console.error('Failed to fetch pattern performance:', error);
+        return [];
+    }
 }
 
 export async function getTrainedAssets(userId: string): Promise<TrainedAsset[]> {

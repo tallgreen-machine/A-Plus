@@ -240,11 +240,11 @@ async def test_trades(db=Depends(get_database)):
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(
                 """
-                SELECT id, wallet_id, symbol, trade_type, entry_price, exit_price, 
-                       pnl_percentage, entry_time, exit_time, pattern_name
+                SELECT id, user_id, symbol, direction, price, 
+                       pnl_percent, executed_at, pattern_id, strategy_name
                 FROM trades 
                 WHERE user_id = 1
-                ORDER BY entry_time DESC 
+                ORDER BY executed_at DESC 
                 LIMIT 10
                 """
             )
@@ -254,14 +254,14 @@ async def test_trades(db=Depends(get_database)):
             for trade in trades:
                 formatted_trades.append({
                     "id": trade['id'],
-                    "timestamp": trade['entry_time'].isoformat() if trade['entry_time'] else None,
+                    "timestamp": trade['executed_at'].isoformat() if trade['executed_at'] else None,
                     "symbol": trade['symbol'],
-                    "direction": trade['trade_type'],
-                    "entryPrice": float(trade['entry_price'] or 0),
-                    "exitPrice": float(trade['exit_price'] or 0) if trade['exit_price'] else None,
-                    "pnlPercent": float(trade['pnl_percentage'] or 0),
-                    "patternName": trade['pattern_name'],
-                    "status": "CLOSED" if trade['exit_time'] else "OPEN"
+                    "direction": trade['direction'],
+                    "entryPrice": float(trade['price'] or 0),
+                    "exitPrice": None,  # trades table doesn't have exit price
+                    "pnlPercent": float(trade['pnl_percent'] or 0),
+                    "patternName": trade['strategy_name'],
+                    "status": "CLOSED"  # all trades in trades table are closed
                 })
             
             return {
@@ -272,6 +272,45 @@ async def test_trades(db=Depends(get_database)):
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/test-new")
+async def test_trades_new(db=Depends(get_database)):
+    """NEW test endpoint to verify deployment is working"""
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute(
+                """
+                SELECT id, user_id, symbol, direction, price, 
+                       pnl_percent, executed_at, strategy_name
+                FROM trades 
+                WHERE user_id = 1
+                ORDER BY executed_at DESC 
+                LIMIT 10
+                """
+            )
+            trades = cur.fetchall()
+            
+            result = []
+            for trade in trades:
+                result.append({
+                    "id": trade['id'],
+                    "timestamp": trade['executed_at'].isoformat() if trade['executed_at'] else None,
+                    "symbol": trade['symbol'],
+                    "direction": trade['direction'],
+                    "price": float(trade['price'] or 0),
+                    "pnl": float(trade['pnl_percent'] or 0),
+                    "strategy": trade['strategy_name']
+                })
+            
+            return {
+                "success": True,
+                "data": result,
+                "count": len(result),
+                "message": "Database connection working"
+            }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @router.get("/test-active")
 async def test_active_trades(db=Depends(get_database)):
     """Test active trades endpoint without authentication"""
@@ -280,9 +319,9 @@ async def test_active_trades(db=Depends(get_database)):
             cur.execute(
                 """
                 SELECT symbol, direction, entry_price, quantity, current_price, 
-                       unrealized_pnl, take_profit, stop_loss, pattern_name, timestamp
+                       unrealized_pnl, take_profit, stop_loss, pattern_name, entry_timestamp
                 FROM active_trades 
-                ORDER BY timestamp DESC 
+                ORDER BY entry_timestamp DESC 
                 LIMIT 10
                 """
             )
@@ -300,7 +339,7 @@ async def test_active_trades(db=Depends(get_database)):
                         "takeProfit": float(trade['take_profit']) if trade['take_profit'] else None,
                         "stopLoss": float(trade['stop_loss']) if trade['stop_loss'] else None,
                         "patternName": trade['pattern_name'],
-                        "startTimestamp": trade['timestamp'].isoformat() if trade['timestamp'] else None
+                        "startTimestamp": trade['entry_timestamp'].isoformat() if trade['entry_timestamp'] else None
                     }
                     for trade in active_trades
                 ]
