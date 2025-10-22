@@ -32,7 +32,7 @@ curl http://138.68.245.159:8000/health
 - **API Docs**: http://138.68.245.159:8000/docs (30+ enhanced endpoints)
 - **Database**: PostgreSQL with pgvector on localhost:5432
 
-📚 **Complete deployment guide**: [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+📚 **Complete deployment guide**: [DEPLOYMENT_GUIDE.md](./docs/DEPLOYMENT_GUIDE.md)
 
 ## 🏗️ System Architecture
 
