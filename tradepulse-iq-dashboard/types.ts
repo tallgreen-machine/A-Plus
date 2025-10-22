@@ -52,16 +52,16 @@ export interface BotStatus {
     status: BotStatusState;
 }
 
-export enum PatternStatus {
+export enum StrategyStatus {
     ACTIVE = 'ACTIVE',
     PAUSED = 'PAUSED',
     PAPER_TRADING = 'PAPER_TRADING',
 }
 
-export interface PatternPerformance {
+export interface StrategyPerformance {
     id: string;
     name: string;
-    status: PatternStatus;
+    status: StrategyStatus;
     totalPL: number;
     winLossRatio: number;
     totalTrades: number;
@@ -79,24 +79,24 @@ export interface ActiveTrade {
     currentPL: number;
     takeProfit: number;
     stopLoss: number;
-    patternName: string;
+    strategyName: string;
     startTimestamp: string;
     currentPrice?: number;
 }
 
 export interface TrainedAsset {
     symbol: string;
-    patterns: {
-        patternId: string;
+    strategies: {
+        strategyId: string;
         initials: string;
         totalPL: number;
-        status: PatternStatus;
+        status: StrategyStatus;
     }[];
 }
 
 export interface ExchangePerformance {
     exchange: string;
-    status: PatternStatus;
+    status: StrategyStatus;
     winRate: number;
     avgProfit: number;
     avgLoss: number;
@@ -109,11 +109,11 @@ export interface ExchangePerformance {
 
 export interface RegimePerformance {
     regime: 'Bull Market' | 'Bear Market' | 'Sideways';
-    status: PatternStatus; // Master switch for this regime
+    status: StrategyStatus; // Master switch for this regime
     exchangePerformance: ExchangePerformance[];
 }
 
-export interface PatternParameters {
+export interface StrategyParameters {
     primaryTimeframe: '15m' | '1h' | '4h';
     macroTimeframe: '4h' | '1d';
     primarySignal: {
@@ -137,11 +137,11 @@ export interface PatternParameters {
 
 export interface TrainedAssetDetails {
     symbol: string;
-    patterns: {
+    strategies: {
         id: string;
         name: string;
-        status: PatternStatus;
-        parameters: PatternParameters;
+        status: StrategyStatus;
+        parameters: StrategyParameters;
         trainedHistory: string;
         analytics: {
             winRate: number;
@@ -175,7 +175,7 @@ export enum TrainingPhase {
     COMPLETE = 'Complete',
 }
 
-export interface PatternViability {
+export interface StrategyViability {
     name: string;
     winRate: number;
     signals: number;
@@ -189,7 +189,7 @@ export interface TrainingStatus {
     progress: number;
     message: string;
     eta: string;
-    patternAnalysis?: PatternViability[];
+    strategyAnalysis?: StrategyViability[];
     currentBest?: {
         winRate: number;
         rr: number;
@@ -221,9 +221,9 @@ export interface RegimeImplementation {
     exchanges: ExchangeImplementation[];
 }
 
-export interface PatternImplementation {
+export interface StrategyImplementation {
     pattern: string;
-    parameters: PatternParameters;
+    parameters: StrategyParameters;
     regimes: RegimeImplementation[];
 }
 
@@ -263,7 +263,7 @@ export interface TrainingResults {
             signals: number;
         }[];
     };
-    implementationPlan: PatternImplementation[];
+    implementationPlan: StrategyImplementation[];
     fullReportUrl: string;
     equityCurveUrl: string;
 }

@@ -46,7 +46,7 @@ VALUES
     (NOW() - INTERVAL '24 days', 'UNI/USDT', 'binance', 200.0, 'BUY', 7.2, 1440, 0.72, 1, -1.39, 'Volume Breakout', NOW() - INTERVAL '24 days');
 
 -- Seed Active Trades (Currently Open Positions)
-INSERT INTO active_trades (user_id, symbol, direction, entry_price, quantity, current_price, unrealized_pnl, unrealized_pnl_percent, stop_loss, take_profit, pattern_name, entry_timestamp)
+INSERT INTO active_trades (user_id, symbol, direction, entry_price, quantity, current_price, unrealized_pnl, unrealized_pnl_percent, stop_loss, take_profit, strategy_name, entry_timestamp)
 VALUES
     (1, 'BTC/USDT', 'LONG', 49500, 0.25, 50000, 125, 1.01, 48000, 52000, 'HTF Sweep', NOW() - INTERVAL '2 hours'),
     (1, 'ETH/USDT', 'LONG', 3150, 3.0, 3200, 150, 1.59, 3050, 3350, 'Volume Breakout', NOW() - INTERVAL '4 hours'),
@@ -122,8 +122,8 @@ BEGIN
     END LOOP;
 END $$;
 
--- Seed Pattern Performance Data
-INSERT INTO pattern_performance (user_id, pattern_id, pattern_name, total_trades, winning_trades, losing_trades, win_rate, avg_profit, avg_loss, profit_factor, total_pnl, created_at)
+-- Seed Strategy Performance Data
+INSERT INTO strategy_performance (user_id, strategy_id, strategy_name, total_trades, winning_trades, losing_trades, win_rate, avg_profit, avg_loss, profit_factor, total_pnl, created_at)
 VALUES
     (1, 1, 'HTF Sweep', 45, 32, 13, 71.11, 850.5, 320.2, 2.66, 14250.5, NOW()),
     (1, 2, 'Volume Breakout', 38, 24, 14, 63.16, 720.3, 410.5, 1.75, 8540.2, NOW()),
@@ -146,7 +146,7 @@ ON CONFLICT (user_id) DO UPDATE SET
     avg_loss = EXCLUDED.avg_loss;
 
 -- Add pattern definitions
-INSERT INTO patterns (id, name, description, category, created_at)
+INSERT INTO strategies (id, name, description, category, created_at)
 VALUES
     (1, 'HTF Sweep', 'Higher timeframe liquidity sweep strategy', 'Liquidity', NOW()),
     (2, 'Volume Breakout', 'Volume-confirmed breakout strategy', 'Momentum', NOW()),
@@ -169,6 +169,6 @@ SELECT 'Holdings:', COUNT(*) FROM holdings
 UNION ALL
 SELECT 'Equity History:', COUNT(*) FROM equity_history
 UNION ALL
-SELECT 'Pattern Performance:', COUNT(*) FROM pattern_performance
+SELECT 'Strategy Performance:', COUNT(*) FROM strategy_performance
 UNION ALL
 SELECT 'Performance Metrics:', COUNT(*) FROM performance_metrics;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, FC } from 'react';
 import * as api from '../services/realApi';
-import type { AssetRanking, TrainingStatus, TrainingResults, PatternViability, WalkForwardResult, PatternImplementation } from '../types';
+import type { AssetRanking, TrainingStatus, TrainingResults, StrategyViability, WalkForwardResult, StrategyImplementation } from '../types';
 import { TrainingPhase } from '../types';
 import { Skeleton } from './Skeleton';
 import {
@@ -165,11 +165,11 @@ const TrainingProgressView: FC<{ jobId: string, assetSymbol: string, onCancel: (
                  <p className="text-sm text-brand-text-secondary text-center h-4">{status?.message}</p>
             </div>
             
-            {status?.patternAnalysis && (
+            {status?.strategyAnalysis && (
                 <div className="mt-8">
-                     <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Pattern Viability Analysis</h3>
+                     <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Strategy Viability Analysis</h3>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {status.patternAnalysis.map(p => {
+                        {status.strategyAnalysis.map(p => {
                             const viable = p.status === 'Viable';
                             const marginal = p.status === 'Marginal';
                             return (
@@ -209,8 +209,8 @@ const ToggleSwitch: FC<{ enabled: boolean; onChange: (enabled: boolean) => void;
     );
 };
 
-const ImplementationPlanView: FC<{ plan: PatternImplementation[] }> = ({ plan }) => {
-    const [implementationPlan, setImplementationPlan] = useState<PatternImplementation[]>(plan);
+const ImplementationPlanView: FC<{ plan: StrategyImplementation[] }> = ({ plan }) => {
+    const [implementationPlan, setImplementationPlan] = useState<StrategyImplementation[]>(plan);
 
     const handleToggle = (pIndex: number, rIndex: number, eIndex: number) => {
         const newPlan = JSON.parse(JSON.stringify(implementationPlan));
@@ -772,7 +772,7 @@ PHASE 1: EXCHANGE DATA COLLECTION & ANALYSIS
    Any pattern with average wins <2.6% will lose money on Coinbase!
 
 PHASE 2: PATTERN VIABILITY ASSESSMENT (Exchange-Aware)
-For each of the 4 patterns:
+For each of the 4 strategies:
 1. Run pattern detector with DEFAULT parameters across all historical data
 2. Count total signals detected
 3. For EACH signal, calculate PnL AFTER exchange costs:

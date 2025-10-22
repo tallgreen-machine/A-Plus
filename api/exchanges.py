@@ -307,7 +307,7 @@ class ExchangeConnectionStatus(str, Enum):
     DISCONNECTED = "DISCONNECTED"
     ERROR = "ERROR"
 
-class PatternStatus(str, Enum):
+class StrategyStatus(str, Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     PAPER_TRADING = "PAPER_TRADING"
@@ -324,7 +324,7 @@ class ExchangeConnection(BaseModel):
 
 class ExchangePerformance(BaseModel):
     exchange: str
-    status: PatternStatus
+    status: StrategyStatus
     winRate: float
     avgProfit: float
     avgLoss: float
@@ -336,7 +336,7 @@ class ExchangePerformance(BaseModel):
 
 class RegimePerformance(BaseModel):
     regime: str
-    status: PatternStatus
+    status: StrategyStatus
     exchangePerformance: List[ExchangePerformance]
 
 def decimal_to_float(value):
@@ -482,11 +482,11 @@ async def get_exchange_performance(
         sample_performance = [
             RegimePerformance(
                 regime="Bull Market",
-                status=PatternStatus.ACTIVE,
+                status=StrategyStatus.ACTIVE,
                 exchangePerformance=[
                     ExchangePerformance(
                         exchange="binanceus",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         winRate=0.72,
                         avgProfit=145.50,
                         avgLoss=-68.25,
@@ -498,7 +498,7 @@ async def get_exchange_performance(
                     ),
                     ExchangePerformance(
                         exchange="coinbase",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         winRate=0.68,
                         avgProfit=132.25,
                         avgLoss=-71.50,
@@ -510,7 +510,7 @@ async def get_exchange_performance(
                     ),
                     ExchangePerformance(
                         exchange="kraken",
-                        status=PatternStatus.PAUSED,
+                        status=StrategyStatus.PAUSED,
                         winRate=0.61,
                         avgProfit=121.75,
                         avgLoss=-78.90,
@@ -524,11 +524,11 @@ async def get_exchange_performance(
             ),
             RegimePerformance(
                 regime="Bear Market",
-                status=PatternStatus.ACTIVE,
+                status=StrategyStatus.ACTIVE,
                 exchangePerformance=[
                     ExchangePerformance(
                         exchange="binanceus",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         winRate=0.58,
                         avgProfit=98.30,
                         avgLoss=-85.75,
@@ -540,7 +540,7 @@ async def get_exchange_performance(
                     ),
                     ExchangePerformance(
                         exchange="coinbase",
-                        status=PatternStatus.PAPER_TRADING,
+                        status=StrategyStatus.PAPER_TRADING,
                         winRate=0.55,
                         avgProfit=87.65,
                         avgLoss=-92.40,
@@ -554,11 +554,11 @@ async def get_exchange_performance(
             ),
             RegimePerformance(
                 regime="Sideways",
-                status=PatternStatus.ACTIVE,
+                status=StrategyStatus.ACTIVE,
                 exchangePerformance=[
                     ExchangePerformance(
                         exchange="binanceus",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         winRate=0.64,
                         avgProfit=76.80,
                         avgLoss=-54.30,
@@ -570,7 +570,7 @@ async def get_exchange_performance(
                     ),
                     ExchangePerformance(
                         exchange="coinbase",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         winRate=0.62,
                         avgProfit=71.25,
                         avgLoss=-58.75,

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Portfolio, Trade, EquityPoint, PerformanceMetrics, BotStatus, PatternPerformance, ActiveTrade, TrainedAsset } from './types';
+import type { Portfolio, Trade, EquityPoint, PerformanceMetrics, BotStatus, StrategyPerformance, ActiveTrade, TrainedAsset } from './types';
 import { BotStatusState, TradeDirection } from './types';
 import * as api from './services/realApi';
 import { KpiCard } from './components/KpiCard';
@@ -8,7 +8,7 @@ import { DataTable } from './components/DataTable';
 import { LogViewer } from './components/LogViewer';
 import { StatusIndicator } from './components/StatusIndicator';
 import { ArrowDownIcon, BarChartIcon, HashIcon, ActivityIcon, ZapIcon, ChevronDownIcon, ChevronUpIcon, ListIcon, ClockIcon, TrendingUpIcon, DollarSignIcon, BrandIcon, LayoutDashboardIcon, BrainCircuitIcon, SettingsIcon } from './components/icons';
-import { PatternPerformanceTable } from './components/PatternPerformanceTable';
+import { StrategyPerformanceTable } from './components/StrategyPerformanceTable';
 import { Tabs } from './components/Tabs';
 import { Skeleton } from './components/Skeleton';
 import { UserSelector } from './components/UserSelector';
@@ -24,7 +24,7 @@ const App: React.FC = () => {
     const [history, setHistory] = useState<EquityPoint[]>([]);
     const [performance, setPerformance] = useState<PerformanceMetrics | null>(null);
     const [status, setStatus] = useState<BotStatus>({ status: BotStatusState.STOPPED });
-    const [patterns, setPatterns] = useState<PatternPerformance[]>([]);
+    const [patterns, setStrategies] = useState<StrategyPerformance[]>([]);
     const [activeTrades, setActiveTrades] = useState<ActiveTrade[]>([]);
     const [trainedAssets, setTrainedAssets] = useState<TrainedAsset[]>([]);
     const [loading, setLoading] = useState(true);
@@ -97,11 +97,11 @@ const App: React.FC = () => {
             }
 
             try {
-                const patternsData = await api.getPatternsPerformance(currentUser);
-                setPatterns(Array.isArray(patternsData) ? patternsData : []);
+                const strategiesData = await api.getStrategiesPerformance(currentUser);
+                setStrategies(Array.isArray(strategiesData) ? strategiesData : []);
             } catch (error) {
-                console.warn('Failed to fetch patterns:', error);
-                setPatterns([]);
+                console.warn('Failed to fetch strategies:', error);
+                setStrategies([]);
             }
 
             try {
@@ -178,10 +178,10 @@ const App: React.FC = () => {
             )
         },
         {
-            label: "Overall Pattern Performance",
+            label: "Overall Strategy Performance",
             content: (
                 <div className="h-full overflow-y-auto">
-                    <PatternPerformanceTable patterns={patterns} />
+                    <StrategyPerformanceTable patterns={strategies} />
                 </div>
             )
         }
@@ -252,7 +252,7 @@ const App: React.FC = () => {
                                             <div className="flex items-center gap-2">
                                                 {asset.patterns.map(p => (
                                                     <div 
-                                                        key={p.patternId}
+                                                        key={p.strategyId}
                                                         className={`w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold transition-all
                                                             ${p.status === 'ACTIVE' ? 'opacity-100' : 'opacity-30'}
                                                             ${p.totalPL >= 0 ? 'bg-brand-positive text-green-900' : 'bg-brand-negative text-red-900'}`}
@@ -315,7 +315,7 @@ const App: React.FC = () => {
                                                         {trade.direction}
                                                     </span>
                                                 </div>
-                                                <p className="text-xs text-brand-text-secondary mt-1">{trade.patternName}</p>
+                                                <p className="text-xs text-brand-text-secondary mt-1">{trade.strategyName}</p>
                                                 <p className="text-xs text-brand-text-secondary mt-1">
                                                     Size: <span className="font-medium text-brand-text-primary">{formatCurrency(trade.quantity * trade.entryPrice)}</span>
                                                 </p>

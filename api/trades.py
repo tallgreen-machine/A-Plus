@@ -241,7 +241,7 @@ async def test_trades(db=Depends(get_database)):
             cur.execute(
                 """
                 SELECT id, user_id, symbol, direction, price, 
-                       pnl_percent, executed_at, pattern_id, strategy_name
+                       pnl_percent, executed_at, strategy_id, strategy_name
                 FROM trades 
                 WHERE user_id = 1
                 ORDER BY executed_at DESC 
@@ -260,7 +260,7 @@ async def test_trades(db=Depends(get_database)):
                     "entryPrice": float(trade['price'] or 0),
                     "exitPrice": None,  # trades table doesn't have exit price
                     "pnlPercent": float(trade['pnl_percent'] or 0),
-                    "patternName": trade['strategy_name'],
+                    "strategyName": trade['strategy_name'],
                     "status": "CLOSED"  # all trades in trades table are closed
                 })
             
@@ -319,7 +319,7 @@ async def test_active_trades(db=Depends(get_database)):
             cur.execute(
                 """
                 SELECT symbol, direction, entry_price, quantity, current_price, 
-                       unrealized_pnl, take_profit, stop_loss, pattern_name, entry_timestamp
+                       unrealized_pnl, take_profit, stop_loss, strategy_name, entry_timestamp
                 FROM active_trades 
                 ORDER BY entry_timestamp DESC 
                 LIMIT 10
@@ -338,7 +338,7 @@ async def test_active_trades(db=Depends(get_database)):
                         "currentPL": float(trade['unrealized_pnl'] or 0),
                         "takeProfit": float(trade['take_profit']) if trade['take_profit'] else None,
                         "stopLoss": float(trade['stop_loss']) if trade['stop_loss'] else None,
-                        "patternName": trade['pattern_name'],
+                        "strategyName": trade['strategy_name'],
                         "startTimestamp": trade['entry_timestamp'].isoformat() if trade['entry_timestamp'] else None
                     }
                     for trade in active_trades
@@ -355,7 +355,7 @@ async def test_active_trades(db=Depends(get_database)):
                         "currentPL": 150.0,
                         "takeProfit": 3800.0,
                         "stopLoss": 3300.0,
-                        "patternName": "Liquidity Sweep Reversal",
+                        "strategyName": "Liquidity Sweep Reversal",
                         "startTimestamp": "2024-01-01T12:00:00"
                     }
                 ]
@@ -398,7 +398,7 @@ class ActiveTrade(BaseModel):
     currentPL: float
     takeProfit: float
     stopLoss: float
-    patternName: str
+    strategyName: str
     startTimestamp: str
     currentPrice: Optional[float] = None
 
@@ -479,7 +479,7 @@ async def get_active_trades(
             cur.execute(
                 """
                 SELECT id, symbol, direction, entry_price, quantity, unrealized_pnl,
-                       take_profit, stop_loss, pattern_name, entry_timestamp, current_price
+                       take_profit, stop_loss, strategy_name, entry_timestamp, current_price
                 FROM active_trades
                 WHERE user_id = %s
                 ORDER BY entry_timestamp DESC
@@ -500,7 +500,7 @@ async def get_active_trades(
                         currentPL=250.0,
                         takeProfit=52000.0,
                         stopLoss=48000.0,
-                        patternName="Liquidity Sweep",
+                        strategyName="Liquidity Sweep",
                         startTimestamp=(datetime.utcnow() - timedelta(hours=2)).isoformat(),
                         currentPrice=50250.0
                     ),
@@ -513,7 +513,7 @@ async def get_active_trades(
                         currentPL=-75.0,
                         takeProfit=3200.0,
                         stopLoss=2850.0,
-                        patternName="Volume Breakout",
+                        strategyName="Volume Breakout",
                         startTimestamp=(datetime.utcnow() - timedelta(hours=4)).isoformat(),
                         currentPrice=2925.0
                     )
@@ -529,7 +529,7 @@ async def get_active_trades(
                     currentPL=decimal_to_float(row["unrealized_pnl"]) or 0.0,
                     takeProfit=decimal_to_float(row["take_profit"]) or 0.0,
                     stopLoss=decimal_to_float(row["stop_loss"]) or 0.0,
-                    patternName=row["pattern_name"] or "Unknown",
+                    strategyName=row["strategy_name"] or "Unknown",
                     startTimestamp=row["entry_timestamp"].isoformat(),
                     currentPrice=decimal_to_float(row["current_price"])
                 )

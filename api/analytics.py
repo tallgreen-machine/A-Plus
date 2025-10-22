@@ -68,7 +68,7 @@ async def get_asset_ranking():
                         "maxDrawdown": 8.5,
                         "volatilityIndex": 42.3,
                         "liquidityScore": 95.0,
-                        "patternBreakdown": [
+                        "strategyBreakdown": [
                             {"pattern": "HTF Sweep", "trades": 20, "winRate": 75.0, "pl": 1500.0},
                             {"pattern": "Volume Breakout", "trades": 15, "winRate": 60.0, "pl": 800.0},
                             {"pattern": "Divergence Cap", "trades": 10, "winRate": 70.0, "pl": 200.0}
@@ -87,7 +87,7 @@ async def get_asset_ranking():
                         "maxDrawdown": 12.1,
                         "volatilityIndex": 38.7,
                         "liquidityScore": 88.0,
-                        "patternBreakdown": [
+                        "strategyBreakdown": [
                             {"pattern": "HTF Sweep", "trades": 18, "winRate": 66.7, "pl": 1200.0},
                             {"pattern": "Volume Breakout", "trades": 12, "winRate": 58.3, "pl": 400.0},
                             {"pattern": "Divergence Cap", "trades": 8, "winRate": 62.5, "pl": 200.0}
@@ -136,7 +136,7 @@ async def get_asset_ranking():
                 "maxDrawdown": 0,  # Would need historical data
                 "volatilityIndex": 40.0,  # Default
                 "liquidityScore": 85.0,  # Default
-                "patternBreakdown": pattern_breakdown
+                "strategyBreakdown": pattern_breakdown
             })
         
         # Sort by score
@@ -307,7 +307,7 @@ async def get_market_overview():
         raise HTTPException(status_code=500, detail=str(e))
 
 # Enums
-class PatternStatus(str, Enum):
+class StrategyStatus(str, Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     PAPER_TRADING = "PAPER_TRADING"
@@ -324,7 +324,7 @@ class AssetAnalytics(BaseModel):
     maxDrawdown: float
     volatilityIndex: float
     liquidityScore: float
-    patternBreakdown: List[Dict[str, Any]]
+    strategyBreakdown: List[Dict[str, Any]]
 
 class TrainedAssetDetails(BaseModel):
     symbol: str
@@ -388,7 +388,7 @@ async def get_asset_analytics(
         # Generate pattern breakdown
         pattern_breakdown = [
             {
-                "patternName": "Liquidity Sweep",
+                "strategyName": "Liquidity Sweep",
                 "trades": 67,
                 "winRate": 0.71,
                 "totalPL": 1234.50,
@@ -397,7 +397,7 @@ async def get_asset_analytics(
                 "status": "ACTIVE"
             },
             {
-                "patternName": "Volume Breakout",
+                "strategyName": "Volume Breakout",
                 "trades": 54,
                 "winRate": 0.65,
                 "totalPL": 891.25,
@@ -406,7 +406,7 @@ async def get_asset_analytics(
                 "status": "ACTIVE"
             },
             {
-                "patternName": "Divergence Capitulation",
+                "strategyName": "Divergence Capitulation",
                 "trades": 35,
                 "winRate": 0.51,
                 "totalPL": 220.00,
@@ -427,7 +427,7 @@ async def get_asset_analytics(
             maxDrawdown=metrics["maxDrawdown"],
             volatilityIndex=metrics["volatilityIndex"],
             liquidityScore=metrics["liquidityScore"],
-            patternBreakdown=pattern_breakdown
+            strategyBreakdown=pattern_breakdown
         )
         
     except Exception as e:
@@ -555,7 +555,7 @@ async def get_market_overview(current_user: dict = Depends(get_current_user)):
     try:
         overview = {
             "totalAssets": 25,
-            "activePatterns": 4,
+            "activeStrategies": 4,
             "totalTrades": 1547,
             "overallWinRate": 0.68,
             "totalPL": 8756.30,

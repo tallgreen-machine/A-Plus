@@ -15,7 +15,7 @@ import logging
 from api.auth import router as auth_router
 from api.portfolio import router as portfolio_router
 from api.trades import router as trades_router
-from api.patterns import router as patterns_router
+from api.strategies_api import router as strategies_router
 from api.training import router as training_router
 from api.exchanges import router as exchanges_router
 from api.analytics import router as analytics_router
@@ -49,7 +49,7 @@ async def health_check():
 app.include_router(auth_router, tags=["Authentication"])
 app.include_router(portfolio_router, tags=["Portfolio"])
 app.include_router(trades_router, tags=["Trades"])
-app.include_router(patterns_router, tags=["Patterns"])
+app.include_router(strategies_router, tags=["Strategies"])
 app.include_router(training_router, tags=["Training"])
 app.include_router(exchanges_router, tags=["Exchanges"])
 app.include_router(analytics_router, tags=["Analytics"])

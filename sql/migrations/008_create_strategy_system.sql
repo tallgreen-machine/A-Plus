@@ -1,8 +1,8 @@
--- 008_create_pattern_system.sql
--- Pattern management, performance tracking, and parameter configuration
+-- 008_create_strategy_system.sql
+-- Strategy management, performance tracking, and parameter configuration
 
 -- Patterns table for pattern definitions and metadata
-CREATE TABLE IF NOT EXISTS patterns (
+CREATE TABLE IF NOT EXISTS strategies (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
     description TEXT,
@@ -12,16 +12,16 @@ CREATE TABLE IF NOT EXISTS patterns (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_by INTEGER REFERENCES users(id),
-    -- Pattern metadata
+    -- Strategy metadata
     version VARCHAR(50) DEFAULT '1.0',
     min_confidence NUMERIC(4, 3) DEFAULT 0.5,
     max_risk_per_trade NUMERIC(4, 3) DEFAULT 0.02
 );
 
--- Pattern parameters for configurable pattern settings
-CREATE TABLE IF NOT EXISTS pattern_parameters (
+-- Strategy parameters for configurable pattern settings
+CREATE TABLE IF NOT EXISTS strategy_parameters (
     id SERIAL PRIMARY KEY,
-    pattern_id INTEGER REFERENCES patterns(id) ON DELETE CASCADE,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE, -- User-specific overrides
     parameter_name VARCHAR(255) NOT NULL,
     parameter_value JSONB NOT NULL,
@@ -32,13 +32,13 @@ CREATE TABLE IF NOT EXISTS pattern_parameters (
     description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(pattern_id, user_id, parameter_name)
+    UNIQUE(strategy_id, user_id, parameter_name)
 );
 
--- Pattern performance tracking
-CREATE TABLE IF NOT EXISTS pattern_performance (
+-- Strategy performance tracking
+CREATE TABLE IF NOT EXISTS strategy_performance (
     id SERIAL PRIMARY KEY,
-    pattern_id INTEGER REFERENCES patterns(id) ON DELETE CASCADE,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     symbol VARCHAR(255),
     timeframe VARCHAR(10), -- '1m', '5m', '1h', '4h', '1d'
@@ -65,13 +65,13 @@ CREATE TABLE IF NOT EXISTS pattern_performance (
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     -- Status
     status VARCHAR(20) CHECK (status IN ('ACTIVE', 'PAUSED', 'PAPER_TRADING', 'DISABLED')) DEFAULT 'ACTIVE',
-    UNIQUE(pattern_id, user_id, symbol, timeframe)
+    UNIQUE(strategy_id, user_id, symbol, timeframe)
 );
 
--- Pattern training results for AI/ML optimization
-CREATE TABLE IF NOT EXISTS pattern_training_results (
+-- Strategy training results for AI/ML optimization
+CREATE TABLE IF NOT EXISTS strategy_training_results (
     id SERIAL PRIMARY KEY,
-    pattern_id INTEGER REFERENCES patterns(id) ON DELETE CASCADE,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     symbol VARCHAR(255) NOT NULL,
     training_session_id UUID DEFAULT gen_random_uuid(),
@@ -100,9 +100,9 @@ CREATE TABLE IF NOT EXISTS pattern_training_results (
 );
 
 -- Exchange-specific pattern performance
-CREATE TABLE IF NOT EXISTS pattern_exchange_performance (
+CREATE TABLE IF NOT EXISTS strategy_exchange_performance (
     id SERIAL PRIMARY KEY,
-    pattern_id INTEGER REFERENCES patterns(id) ON DELETE CASCADE,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     exchange VARCHAR(255) NOT NULL,
     symbol VARCHAR(255),
@@ -120,13 +120,13 @@ CREATE TABLE IF NOT EXISTS pattern_exchange_performance (
     -- Status and timing
     status VARCHAR(20) CHECK (status IN ('ACTIVE', 'PAUSED', 'PAPER_TRADING', 'DISABLED')) DEFAULT 'ACTIVE',
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(pattern_id, user_id, exchange, symbol)
+    UNIQUE(strategy_id, user_id, exchange, symbol)
 );
 
 -- Market regime performance tracking
-CREATE TABLE IF NOT EXISTS pattern_regime_performance (
+CREATE TABLE IF NOT EXISTS strategy_regime_performance (
     id SERIAL PRIMARY KEY,
-    pattern_id INTEGER REFERENCES patterns(id) ON DELETE CASCADE,
+    strategy_id INTEGER REFERENCES strategies(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     regime VARCHAR(50) CHECK (regime IN ('BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOLATILITY', 'LOW_VOLATILITY')) NOT NULL,
     symbol VARCHAR(255),
@@ -142,50 +142,50 @@ CREATE TABLE IF NOT EXISTS pattern_regime_performance (
     regime_detection_accuracy NUMERIC(6, 4),
     false_signal_rate NUMERIC(6, 4),
     last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(pattern_id, user_id, regime, symbol)
+    UNIQUE(strategy_id, user_id, regime, symbol)
 );
 
 -- Create indexes for performance
-CREATE INDEX IF NOT EXISTS idx_patterns_name ON patterns(name);
-CREATE INDEX IF NOT EXISTS idx_patterns_active ON patterns(is_active);
-CREATE INDEX IF NOT EXISTS idx_pattern_parameters_pattern_user ON pattern_parameters(pattern_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_performance_pattern_user ON pattern_performance(pattern_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_performance_symbol_timeframe ON pattern_performance(symbol, timeframe);
-CREATE INDEX IF NOT EXISTS idx_pattern_performance_status ON pattern_performance(status);
-CREATE INDEX IF NOT EXISTS idx_pattern_training_results_pattern_user ON pattern_training_results(pattern_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_training_results_session ON pattern_training_results(training_session_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_exchange_performance_pattern_user ON pattern_exchange_performance(pattern_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_exchange_performance_exchange ON pattern_exchange_performance(exchange);
-CREATE INDEX IF NOT EXISTS idx_pattern_regime_performance_pattern_user ON pattern_regime_performance(pattern_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_pattern_regime_performance_regime ON pattern_regime_performance(regime);
+CREATE INDEX IF NOT EXISTS idx_patterns_name ON strategies(name);
+CREATE INDEX IF NOT EXISTS idx_patterns_active ON strategies(is_active);
+CREATE INDEX IF NOT EXISTS idx_strategy_parameters_strategy_user ON strategy_parameters(strategy_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_performance_strategy_user ON strategy_performance(strategy_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_performance_symbol_timeframe ON strategy_performance(symbol, timeframe);
+CREATE INDEX IF NOT EXISTS idx_strategy_performance_status ON strategy_performance(status);
+CREATE INDEX IF NOT EXISTS idx_strategy_training_results_strategy_user ON strategy_training_results(strategy_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_training_results_session ON strategy_training_results(training_session_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_exchange_performance_strategy_user ON strategy_exchange_performance(strategy_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_exchange_performance_exchange ON strategy_exchange_performance(exchange);
+CREATE INDEX IF NOT EXISTS idx_strategy_regime_performance_strategy_user ON strategy_regime_performance(strategy_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_strategy_regime_performance_regime ON strategy_regime_performance(regime);
 
 -- Grant permissions to traduser
-GRANT ALL ON TABLE patterns TO traduser;
-GRANT ALL ON TABLE pattern_parameters TO traduser;
-GRANT ALL ON TABLE pattern_performance TO traduser;
-GRANT ALL ON TABLE pattern_training_results TO traduser;
-GRANT ALL ON TABLE pattern_exchange_performance TO traduser;
-GRANT ALL ON TABLE pattern_regime_performance TO traduser;
+GRANT ALL ON TABLE strategies TO traduser;
+GRANT ALL ON TABLE strategy_parameters TO traduser;
+GRANT ALL ON TABLE strategy_performance TO traduser;
+GRANT ALL ON TABLE strategy_training_results TO traduser;
+GRANT ALL ON TABLE strategy_exchange_performance TO traduser;
+GRANT ALL ON TABLE strategy_regime_performance TO traduser;
 
 GRANT USAGE, SELECT ON SEQUENCE patterns_id_seq TO traduser;
-GRANT USAGE, SELECT ON SEQUENCE pattern_parameters_id_seq TO traduser;
-GRANT USAGE, SELECT ON SEQUENCE pattern_performance_id_seq TO traduser;
-GRANT USAGE, SELECT ON SEQUENCE pattern_training_results_id_seq TO traduser;
-GRANT USAGE, SELECT ON SEQUENCE pattern_exchange_performance_id_seq TO traduser;
-GRANT USAGE, SELECT ON SEQUENCE pattern_regime_performance_id_seq TO traduser;
+GRANT USAGE, SELECT ON SEQUENCE strategy_parameters_id_seq TO traduser;
+GRANT USAGE, SELECT ON SEQUENCE strategy_performance_id_seq TO traduser;
+GRANT USAGE, SELECT ON SEQUENCE strategy_training_results_id_seq TO traduser;
+GRANT USAGE, SELECT ON SEQUENCE strategy_exchange_performance_id_seq TO traduser;
+GRANT USAGE, SELECT ON SEQUENCE strategy_regime_performance_id_seq TO traduser;
 
--- Insert some default patterns to match the frontend
-INSERT INTO patterns (name, description, category, implementation_class) VALUES
-    ('Liquidity Sweep', 'Detects liquidity sweep patterns with stop hunt reversals', 'Reversal', 'LiquiditySweepPattern'),
+-- Insert some default strategies to match the frontend
+INSERT INTO strategies (name, description, category, implementation_class) VALUES
+    ('Liquidity Sweep', 'Detects liquidity sweep strategies with stop hunt reversals', 'Reversal', 'LiquiditySweepPattern'),
     ('Divergence Capitulation', 'RSI/Price divergence with capitulation signals', 'Reversal', 'DivergenceCapitulationPattern'),
     ('HTF Sweep', 'Higher timeframe sweep with lower timeframe entries', 'Breakout', 'HTFSweepPattern'),
-    ('Volume Breakout', 'Volume-confirmed breakout patterns', 'Breakout', 'VolumeBreakoutPattern')
+    ('Volume Breakout', 'Volume-confirmed breakout strategies', 'Breakout', 'VolumeBreakoutPattern')
 ON CONFLICT (name) DO NOTHING;
 
 -- Comments for documentation
-COMMENT ON TABLE patterns IS 'Pattern definitions and metadata';
-COMMENT ON TABLE pattern_parameters IS 'Configurable parameters for each pattern by user';
-COMMENT ON TABLE pattern_performance IS 'Performance tracking for patterns by symbol and timeframe';
-COMMENT ON TABLE pattern_training_results IS 'AI/ML training results and optimization data';
-COMMENT ON TABLE pattern_exchange_performance IS 'Exchange-specific pattern performance metrics';
-COMMENT ON TABLE pattern_regime_performance IS 'Pattern performance across different market regimes';
+COMMENT ON TABLE strategies IS 'Strategy definitions and metadata';
+COMMENT ON TABLE strategy_parameters IS 'Configurable parameters for each pattern by user';
+COMMENT ON TABLE strategy_performance IS 'Performance tracking for strategies by symbol and timeframe';
+COMMENT ON TABLE strategy_training_results IS 'AI/ML training results and optimization data';
+COMMENT ON TABLE strategy_exchange_performance IS 'Exchange-specific pattern performance metrics';
+COMMENT ON TABLE strategy_regime_performance IS 'Strategy performance across different market regimes';

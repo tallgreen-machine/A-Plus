@@ -280,7 +280,7 @@ class AssetRanking(BaseModel):
     estimatedTime: str
     riskLevel: str
 
-class PatternViability(BaseModel):
+class StrategyViability(BaseModel):
     name: str
     winRate: float
     signals: int
@@ -293,7 +293,7 @@ class TrainingStatus(BaseModel):
     progress: float
     message: str
     eta: str
-    patternAnalysis: Optional[List[PatternViability]] = None
+    strategyAnalysis: Optional[List[StrategyViability]] = None
     currentBest: Optional[Dict[str, float]] = None
 
 class TrainingResults(BaseModel):
@@ -545,9 +545,9 @@ async def get_training_status(
     pattern_analysis = None
     if job["phase"] == TrainingPhase.VIABILITY_ASSESSMENT:
         pattern_analysis = [
-            PatternViability(name="Liquidity Sweep", winRate=0.68, signals=45, status="Viable"),
-            PatternViability(name="Volume Breakout", winRate=0.72, signals=32, status="Viable"),
-            PatternViability(name="Divergence Capitulation", winRate=0.45, signals=18, status="Not Viable")
+            StrategyViability(name="Liquidity Sweep", winRate=0.68, signals=45, status="Viable"),
+            StrategyViability(name="Volume Breakout", winRate=0.72, signals=32, status="Viable"),
+            StrategyViability(name="Divergence Capitulation", winRate=0.45, signals=18, status="Not Viable")
         ]
     
     # Generate current best if in optimization phase
@@ -566,7 +566,7 @@ async def get_training_status(
         progress=job["progress"],
         message=job["message"],
         eta=job["eta"],
-        patternAnalysis=pattern_analysis,
+        strategyAnalysis=pattern_analysis,
         currentBest=current_best
     )
 
@@ -627,7 +627,7 @@ async def get_training_results(
             }
         },
         "overallScore": 0.88,
-        "recommendedPatterns": ["Volume Breakout", "Liquidity Sweep"],
+        "recommendedStrategies": ["Volume Breakout", "Liquidity Sweep"],
         "estimatedMonthlyReturn": 0.12,
         "estimatedMaxDrawdown": 0.15
     }

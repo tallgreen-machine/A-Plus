@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Modal } from './Modal';
 import * as api from '../services/realApi';
-import type { TrainedAssetDetails, Trade, RegimePerformance, ExchangePerformance, PatternParameters } from '../types';
-import { PatternStatus } from '../types';
+import type { TrainedAssetDetails, Trade, RegimePerformance, ExchangePerformance, StrategyParameters } from '../types';
+import { StrategyStatus } from '../types';
 import { Skeleton } from './Skeleton';
 import { PlayIcon, PauseIcon, ChevronDownIcon, ChevronUpIcon, ClipboardCopyIcon, SparklesIcon, ReceiptIcon, TimerIcon, ShuffleIcon } from './icons';
 import { DataTable } from './DataTable';
@@ -22,7 +22,7 @@ const formatCurrency = (value: number | undefined) => {
 
 const formatPercent = (value: number, decimals = 1) => `${(value * 100).toFixed(decimals)}%`;
 
-const ParameterDisplay: React.FC<{ params: PatternParameters }> = ({ params }) => {
+const ParameterDisplay: React.FC<{ params: StrategyParameters }> = ({ params }) => {
     const renderParam = (label: string, value: any) => (
         <div>
             <span className="text-brand-text-secondary mr-2 capitalize">{label.replace(/([A-Z])/g, ' $1')}:</span>
@@ -87,9 +87,9 @@ const ExchangeDisplay: React.FC<{ ex: ExchangePerformance; onToggle: () => void 
          <button
             onClick={(e) => { e.stopPropagation(); onToggle(); }}
             className="ml-4 p-2 rounded-full text-brand-text-secondary hover:bg-brand-border hover:text-brand-primary transition-colors"
-            aria-label={ex.status === PatternStatus.ACTIVE ? `Pause on ${ex.exchange}` : `Activate on ${ex.exchange}`}
+            aria-label={ex.status === StrategyStatus.ACTIVE ? `Pause on ${ex.exchange}` : `Activate on ${ex.exchange}`}
         >
-            {ex.status === PatternStatus.ACTIVE ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+            {ex.status === StrategyStatus.ACTIVE ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
         </button>
     </div>
 );
@@ -107,9 +107,9 @@ const RegimeDisplay: React.FC<{
             <button
                 onClick={(e) => { e.stopPropagation(); onToggle(); }}
                 className="ml-4 p-2 rounded-full text-brand-text-secondary hover:bg-brand-border hover:text-brand-primary transition-colors"
-                aria-label={regime.status === PatternStatus.ACTIVE ? `Pause ${regime.regime}` : `Activate ${regime.regime}`}
+                aria-label={regime.status === StrategyStatus.ACTIVE ? `Pause ${regime.regime}` : `Activate ${regime.regime}`}
             >
-                {regime.status === PatternStatus.ACTIVE ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+                {regime.status === StrategyStatus.ACTIVE ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
             </button>
         </div>
         <div className="pl-6 space-y-1.5">
@@ -157,9 +157,9 @@ const PatternAccordion: React.FC<{
                 <button
                     onClick={(e) => { e.stopPropagation(); onToggle(); }}
                     className="ml-4 p-2 rounded-full text-brand-text-secondary hover:bg-brand-border hover:text-brand-primary transition-colors"
-                    aria-label={pattern.status === PatternStatus.ACTIVE ? `Pause ${pattern.name}` : `Activate ${pattern.name}`}
+                    aria-label={pattern.status === StrategyStatus.ACTIVE ? `Pause ${pattern.name}` : `Activate ${pattern.name}`}
                 >
-                    {pattern.status === PatternStatus.ACTIVE ? <PauseIcon /> : <PlayIcon />}
+                    {pattern.status === StrategyStatus.ACTIVE ? <PauseIcon /> : <PlayIcon />}
                 </button>
             </header>
             {isOpen && (
@@ -238,30 +238,30 @@ export const AssetAnalyticsModal: React.FC<AssetAnalyticsModalProps> = ({ isOpen
         }
     }, [isOpen, fetchData]);
 
-    const handleToggleStatus = async (patternId: string) => {
-        await api.togglePatternStatusForAsset(userId, assetSymbol, patternId);
+    const handleToggleStatus = async (strategyId: string) => {
+        await api.toggleStrategyStatusForAsset(userId, assetSymbol, strategyId);
         await fetchData();
         onStatusChange();
     };
     
-    const handleToggleRegimeStatus = async (patternId: string, regimeName: string) => {
-        await api.togglePatternRegimeStatus(userId, assetSymbol, patternId, regimeName);
+    const handleToggleRegimeStatus = async (strategyId: string, regimeName: string) => {
+        await api.togglePatternRegimeStatus(userId, assetSymbol, strategyId, regimeName);
         await fetchData();
     };
     
-    const handleToggleExchangeStatus = async (patternId: string, regimeName: string, exchangeName: string) => {
-        await api.togglePatternRegimeExchangeStatus(userId, assetSymbol, patternId, regimeName, exchangeName);
+    const handleToggleExchangeStatus = async (strategyId: string, regimeName: string, exchangeName: string) => {
+        await api.togglePatternRegimeExchangeStatus(userId, assetSymbol, strategyId, regimeName, exchangeName);
         await fetchData();
     };
 
-    const handleToggleAccordion = (patternId: string) => {
-        setExpandedPatternId(currentId => currentId === patternId ? null : patternId);
+    const handleToggleAccordion = (strategyId: string) => {
+        setExpandedPatternId(currentId => currentId === strategyId ? null : strategyId);
     };
     
     const analysisPrompt = useMemo(() => {
         if (!details) return '';
         
-        const formatParams = (params: PatternParameters) => {
+        const formatParams = (params: StrategyParameters) => {
             let pString = `Primary TF: ${params.primaryTimeframe}, Macro TF: ${params.macroTimeframe}\n`;
             pString += `    Primary Signal: ${JSON.stringify(params.primarySignal)}\n`;
             pString += `    Macro Confirmation: ${JSON.stringify(params.macroConfirmation)}\n`;

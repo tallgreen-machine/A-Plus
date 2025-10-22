@@ -1,26 +1,26 @@
 
 import React, { useState } from 'react';
-import type { PatternPerformance } from '../types';
-import { PatternStatus } from '../types';
+import type { StrategyPerformance } from '../types';
+import { StrategyStatus } from '../types';
 import { ChevronDownIcon, ChevronUpIcon } from './icons';
 
-interface PatternPerformanceTableProps {
-    patterns: PatternPerformance[];
+interface StrategyPerformanceTableProps {
+    strategies: StrategyPerformance[];
 }
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 }
 
-export const PatternPerformanceTable: React.FC<PatternPerformanceTableProps> = ({ patterns }) => {
+export const StrategyPerformanceTable: React.FC<StrategyPerformanceTableProps> = ({ strategies }) => {
     const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
-    if (!patterns || patterns.length === 0) {
-        return <div className="text-brand-text-secondary text-center py-4">No pattern data available.</div>;
+    if (!strategies || strategies.length === 0) {
+        return <div className="text-brand-text-secondary text-center py-4">No strategy data available.</div>;
     }
 
-    const handleRowClick = (patternId: string) => {
-        setExpandedRowId(currentId => (currentId === patternId ? null : patternId));
+    const handleRowClick = (strategyId: string) => {
+        setExpandedRowId(currentId => (currentId === strategyId ? null : strategyId));
     };
 
     return (
@@ -36,7 +36,7 @@ export const PatternPerformanceTable: React.FC<PatternPerformanceTableProps> = (
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-brand-border">
-                    {patterns.map((pattern) => (
+                    {strategies.map((pattern) => (
                         <React.Fragment key={pattern.id}>
                             <tr
                                 className="hover:bg-white/5 cursor-pointer transition-colors duration-200"
@@ -52,7 +52,7 @@ export const PatternPerformanceTable: React.FC<PatternPerformanceTableProps> = (
                                 </td>
                                 <td className="px-4 py-3 whitespace-nowrap">
                                     <span className={`px-2 py-1 text-xs font-bold rounded-full ${
-                                        pattern.status === PatternStatus.ACTIVE ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'
+                                        pattern.status === StrategyStatus.ACTIVE ? 'bg-green-500/10 text-green-400' : 'bg-yellow-500/10 text-yellow-400'
                                     }`}>
                                         {pattern.status}
                                     </span>

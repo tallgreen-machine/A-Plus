@@ -1,7 +1,7 @@
--- 002_create_pattern_training_results.sql
-CREATE TABLE IF NOT EXISTS pattern_training_results (
+-- 002_create_strategy_training_results.sql
+CREATE TABLE IF NOT EXISTS strategy_training_results (
     id SERIAL PRIMARY KEY,
-    pattern_name VARCHAR(255) NOT NULL,
+    strategy_name VARCHAR(255) NOT NULL,
     symbol VARCHAR(50) NOT NULL,
     training_parameters JSONB,
     success_rate DOUBLE PRECISION,

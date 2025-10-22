@@ -9,7 +9,7 @@ import {
     EquityPoint, 
     PerformanceMetrics,
     BotStatus,
-    PatternPerformance,
+    StrategyPerformance,
     ActiveTrade,
     TrainedAsset,
     TrainedAssetDetails,
@@ -142,17 +142,17 @@ export async function getLogs(userId: string, limit: number = 100): Promise<stri
     return apiRequest<string[]>('/trades/test-logs');
 }
 
-export async function getPatternsPerformance(userId: string): Promise<PatternPerformance[]> {
+export async function getStrategiesPerformance(userId: string): Promise<StrategyPerformance[]> {
     try {
-        return await apiRequest<PatternPerformance[]>('/patterns/performance');
+        return await apiRequest<StrategyPerformance[]>('/strategies/performance');
     } catch (error) {
-        console.error('Failed to fetch pattern performance:', error);
+        console.error('Failed to fetch strategy performance:', error);
         return [];
     }
 }
 
 export async function getTrainedAssets(userId: string): Promise<TrainedAsset[]> {
-    return apiRequest<TrainedAsset[]>('/patterns/test-trained-assets');
+    return apiRequest<TrainedAsset[]>('/strategies/test-trained-assets');
 }
 
 export async function getAssetDetails(userId: string, symbol: string): Promise<TrainedAssetDetails> {
@@ -167,7 +167,7 @@ export async function getAssetRankings(userId: string): Promise<AssetRanking[]> 
 export async function startTraining(
     userId: string, 
     symbols: string[], 
-    patterns: string[]
+    strategies: string[]
 ): Promise<{ jobId: string; message: string }> {
     return apiRequest<{ jobId: string; message: string }>('/training/start', {
         method: 'POST',

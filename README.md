@@ -21,6 +21,10 @@
 # Deploy to production server
 SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
 
+# Sync database schema
+./ops/scripts/sync_schema.sh --dry-run  # Preview changes
+./ops/scripts/sync_schema.sh            # Apply changes
+
 # Quick access commands
 ./ops/scripts/server_info.sh
 
@@ -32,7 +36,9 @@ curl http://138.68.245.159:8000/health
 - **API Docs**: http://138.68.245.159:8000/docs (30+ enhanced endpoints)
 - **Database**: PostgreSQL with pgvector on localhost:5432
 
-📚 **Complete deployment guide**: [DEPLOYMENT_GUIDE.md](./docs/DEPLOYMENT_GUIDE.md)
+📚 **Complete guides**: 
+- [DEPLOYMENT_GUIDE.md](./docs/DEPLOYMENT_GUIDE.md) - Application deployment
+- [SCHEMA_MANAGEMENT.md](./docs/SCHEMA_MANAGEMENT.md) - Database schema management
 
 ## 🏗️ System Architecture
 

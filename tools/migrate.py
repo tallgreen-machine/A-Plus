@@ -47,9 +47,9 @@ def main():
         "006_create_policy_config.sql",          # Policy config
         "003_create_trades.sql",                 # Trades table
         "007_create_portfolio_system.sql",       # Portfolio system
-        "008_create_pattern_system.sql",         # Pattern system
+        "008_create_strategy_system.sql",         # Strategy system
         "001_create_backtest_results.sql",       # Backtest results
-        "002_create_pattern_training_results.sql", # Pattern training
+        "002_create_strategy_training_results.sql", # Strategy training
         "dashboard_init.sql",                    # Dashboard data
     ]
     

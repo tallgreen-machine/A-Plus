@@ -34,14 +34,14 @@ try:
     # Initialize system components
     trained_assets_manager = TrainedAssetsManager()
     strategies_system_available = True
-    log.info("Patterns API: Enhanced strategy system initialized")
+    log.info("Strategies API: Enhanced strategy system initialized")
     
 except Exception as e:
     strategies_system_available = False
     trained_assets_manager = None
-    log.warning(f"Patterns API: Enhanced strategy system not available: {e}")
+    log.warning(f"Strategies API: Enhanced strategy system not available: {e}")
 
-router = APIRouter(prefix="/api/patterns", tags=["patterns"])
+router = APIRouter(prefix="/api/strategies", tags=["strategies"])
 
 # Enhanced API endpoints for strategy performance
 
@@ -194,8 +194,8 @@ async def get_trained_assets_summary():
 
 # TEMPORARY: Test endpoints without authentication
 @router.get("/test-performance")
-async def test_patterns_performance(db=Depends(get_database)):
-    """Test patterns performance endpoint without authentication - returns real data"""
+async def test_strategies_performance(db=Depends(get_database)):
+    """Test strategies performance endpoint without authentication - returns real data"""
     try:
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(
@@ -203,16 +203,16 @@ async def test_patterns_performance(db=Depends(get_database)):
                 SELECT p.id, p.name, p.is_active, pp.total_trades, pp.winning_trades, 
                        pp.total_pnl, pp.avg_win, pp.avg_loss, pp.win_rate, pp.profit_factor,
                        pp.last_trade_at
-                FROM patterns p
-                LEFT JOIN pattern_performance pp ON p.id = pp.pattern_id AND pp.user_id = 1
+                FROM strategies p
+                LEFT JOIN strategy_performance pp ON p.id = pp.strategy_id AND pp.user_id = 1
                 WHERE p.is_active = true
                 ORDER BY pp.total_pnl DESC NULLS LAST
                 LIMIT 10
                 """
             )
-            patterns = cur.fetchall()
+            strategies = cur.fetchall()
             
-            if patterns:
+            if strategies:
                 return [
                     {
                         "id": f"pattern-{pattern['id']}",
@@ -226,7 +226,7 @@ async def test_patterns_performance(db=Depends(get_database)):
                         "lastTradeTime": pattern['last_trade_at'].isoformat() if pattern['last_trade_at'] else None,
                         "parameters": {}
                     }
-                    for i, pattern in enumerate(patterns)
+                    for i, pattern in enumerate(strategies)
                 ]
             else:
                 # Return sample data
@@ -261,22 +261,22 @@ async def test_trained_assets(db=Depends(get_database)):
         return [
             {
                 "symbol": "BTC/USDT",
-                "patterns": [
-                    {"patternId": "pattern-1", "initials": "LSR", "totalPL": 1500.0, "status": "ACTIVE"},
-                    {"patternId": "pattern-2", "initials": "CR", "totalPL": 800.0, "status": "ACTIVE"}
+                "strategies": [
+                    {"strategyId": "pattern-1", "initials": "LSR", "totalPL": 1500.0, "status": "ACTIVE"},
+                    {"strategyId": "pattern-2", "initials": "CR", "totalPL": 800.0, "status": "ACTIVE"}
                 ],
                 "totalPL": 2300.0,
-                "activePatterns": 2,
+                "activeStrategies": 2,
                 "status": "ACTIVE"
             },
             {
                 "symbol": "ETH/USDT", 
-                "patterns": [
-                    {"patternId": "pattern-1", "initials": "LSR", "totalPL": 900.0, "status": "ACTIVE"},
-                    {"patternId": "pattern-2", "initials": "CR", "totalPL": 650.0, "status": "PAUSED"}
+                "strategies": [
+                    {"strategyId": "pattern-1", "initials": "LSR", "totalPL": 900.0, "status": "ACTIVE"},
+                    {"strategyId": "pattern-2", "initials": "CR", "totalPL": 650.0, "status": "PAUSED"}
                 ],
                 "totalPL": 1550.0,
-                "activePatterns": 1,
+                "activeStrategies": 1,
                 "status": "ACTIVE"
             }
         ]
@@ -284,16 +284,16 @@ async def test_trained_assets(db=Depends(get_database)):
         return {"error": str(e)}
 
 # Enums
-class PatternStatus(str, Enum):
+class StrategyStatus(str, Enum):
     ACTIVE = "ACTIVE"
     PAUSED = "PAUSED"
     PAPER_TRADING = "PAPER_TRADING"
 
 # Pydantic models
-class PatternPerformance(BaseModel):
+class StrategyPerformance(BaseModel):
     id: str
     name: str
-    status: PatternStatus
+    status: StrategyStatus
     totalPL: float
     winLossRatio: float
     totalTrades: int
@@ -301,7 +301,7 @@ class PatternPerformance(BaseModel):
 
 class TrainedAsset(BaseModel):
     symbol: str
-    patterns: List[Dict[str, Any]]
+    strategies: List[Dict[str, Any]]
 
 def decimal_to_float(value):
     """Convert Decimal to float for JSON serialization"""
@@ -311,8 +311,8 @@ def decimal_to_float(value):
         return float(value)
     return value
 
-@router.get("/performance", response_model=List[PatternPerformance])
-async def get_patterns_performance(
+@router.get("/performance", response_model=List[StrategyPerformance])
+async def get_strategies_performance(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
 ):
@@ -323,8 +323,8 @@ async def get_patterns_performance(
                 """
                 SELECT p.id, p.name, pp.status, pp.total_pnl, pp.win_rate, 
                        pp.total_trades, pp.winning_trades, pp.losing_trades
-                FROM patterns p
-                LEFT JOIN pattern_performance pp ON p.id = pp.pattern_id AND pp.user_id = %s
+                FROM strategies p
+                LEFT JOIN strategy_performance pp ON p.id = pp.strategy_id AND pp.user_id = %s
                 WHERE p.is_active = true
                 ORDER BY pp.total_pnl DESC NULLS LAST
                 """,
@@ -333,12 +333,12 @@ async def get_patterns_performance(
             pattern_rows = cur.fetchall()
             
             if not pattern_rows:
-                # Return sample patterns if none exist
+                # Return sample strategies if none exist
                 return [
-                    PatternPerformance(
+                    StrategyPerformance(
                         id="1",
                         name="Liquidity Sweep",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         totalPL=1250.50,
                         winLossRatio=1.8,
                         totalTrades=45,
@@ -350,10 +350,10 @@ async def get_patterns_performance(
                             "stopLossValue": 1.5
                         }
                     ),
-                    PatternPerformance(
+                    StrategyPerformance(
                         id="2",
                         name="Volume Breakout",
-                        status=PatternStatus.ACTIVE,
+                        status=StrategyStatus.ACTIVE,
                         totalPL=890.25,
                         winLossRatio=1.5,
                         totalTrades=32,
@@ -365,10 +365,10 @@ async def get_patterns_performance(
                             "stopLossValue": 2.0
                         }
                     ),
-                    PatternPerformance(
+                    StrategyPerformance(
                         id="3",
                         name="Divergence Capitulation",
-                        status=PatternStatus.PAUSED,
+                        status=StrategyStatus.PAUSED,
                         totalPL=-150.75,
                         winLossRatio=0.9,
                         totalTrades=18,
@@ -393,8 +393,8 @@ async def get_patterns_performance(
                 cur.execute(
                     """
                     SELECT parameter_name, parameter_value
-                    FROM pattern_parameters
-                    WHERE pattern_id = %s AND user_id = %s
+                    FROM strategy_parameters
+                    WHERE strategy_id = %s AND user_id = %s
                     """,
                     (row["id"], current_user["id"])
                 )
@@ -411,10 +411,10 @@ async def get_patterns_performance(
                         "stopLossValue": 1.5
                     }
                 
-                results.append(PatternPerformance(
+                results.append(StrategyPerformance(
                     id=str(row["id"]),
                     name=row["name"],
-                    status=PatternStatus(row["status"]) if row["status"] else PatternStatus.ACTIVE,
+                    status=StrategyStatus(row["status"]) if row["status"] else StrategyStatus.ACTIVE,
                     totalPL=decimal_to_float(row["total_pnl"]) or 0.0,
                     winLossRatio=win_loss_ratio,
                     totalTrades=row["total_trades"] or 0,
@@ -432,14 +432,14 @@ async def get_trained_assets(
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
 ):
-    """Get assets that have been trained with patterns"""
+    """Get assets that have been trained with strategies"""
     try:
         with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute(
                 """
-                SELECT DISTINCT pp.symbol, p.id as pattern_id, p.name, pp.status, pp.total_pnl
-                FROM pattern_performance pp
-                JOIN patterns p ON pp.pattern_id = p.id
+                SELECT DISTINCT pp.symbol, p.id as strategy_id, p.name, pp.status, pp.total_pnl
+                FROM strategy_performance pp
+                JOIN strategies p ON pp.strategy_id = p.id
                 WHERE pp.user_id = %s AND pp.symbol IS NOT NULL
                 ORDER BY pp.symbol, pp.total_pnl DESC
                 """,
@@ -452,15 +452,15 @@ async def get_trained_assets(
                 return [
                     TrainedAsset(
                         symbol="BTC/USDT",
-                        patterns=[
+                        strategies=[
                             {
-                                "patternId": "1",
+                                "strategyId": "1",
                                 "initials": "LS",
                                 "totalPL": 1250.50,
                                 "status": "ACTIVE"
                             },
                             {
-                                "patternId": "2", 
+                                "strategyId": "2", 
                                 "initials": "VB",
                                 "totalPL": 890.25,
                                 "status": "ACTIVE"
@@ -469,15 +469,15 @@ async def get_trained_assets(
                     ),
                     TrainedAsset(
                         symbol="ETH/USDT",
-                        patterns=[
+                        strategies=[
                             {
-                                "patternId": "1",
+                                "strategyId": "1",
                                 "initials": "LS",
                                 "totalPL": 675.30,
                                 "status": "ACTIVE"
                             },
                             {
-                                "patternId": "3",
+                                "strategyId": "3",
                                 "initials": "DC", 
                                 "totalPL": -150.75,
                                 "status": "PAUSED"
@@ -497,24 +497,24 @@ async def get_trained_assets(
                 initials = "".join([word[0] for word in row["name"].split()[:2]]).upper()
                 
                 assets_dict[symbol].append({
-                    "patternId": str(row["pattern_id"]),
+                    "strategyId": str(row["strategy_id"]),
                     "initials": initials,
                     "totalPL": decimal_to_float(row["total_pnl"]) or 0.0,
                     "status": row["status"] or "ACTIVE"
                 })
             
             return [
-                TrainedAsset(symbol=symbol, patterns=patterns)
-                for symbol, patterns in assets_dict.items()
+                TrainedAsset(symbol=symbol, strategies=strategies)
+                for symbol, strategies in assets_dict.items()
             ]
             
     except Exception as e:
         log.error(f"Error getting trained assets for user {current_user['id']}: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve trained assets")
 
-@router.get("/{pattern_id}/parameters")
-async def get_pattern_parameters(
-    pattern_id: int,
+@router.get("/{strategy_id}/parameters")
+async def get_strategy_parameters(
+    strategy_id: int,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
 ):
@@ -524,10 +524,10 @@ async def get_pattern_parameters(
             cur.execute(
                 """
                 SELECT parameter_name, parameter_value, parameter_type, default_value, description
-                FROM pattern_parameters
-                WHERE pattern_id = %s AND user_id = %s
+                FROM strategy_parameters
+                WHERE strategy_id = %s AND user_id = %s
                 """,
-                (pattern_id, current_user["id"])
+                (strategy_id, current_user["id"])
             )
             param_rows = cur.fetchall()
             
@@ -545,9 +545,9 @@ async def get_pattern_parameters(
         log.error(f"Error getting pattern parameters: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve pattern parameters")
 
-@router.put("/{pattern_id}/parameters")
-async def update_pattern_parameters(
-    pattern_id: int,
+@router.put("/{strategy_id}/parameters")
+async def update_strategy_parameters(
+    strategy_id: int,
     parameters: Dict[str, Any],
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
@@ -558,12 +558,12 @@ async def update_pattern_parameters(
             for param_name, param_value in parameters.items():
                 cur.execute(
                     """
-                    INSERT INTO pattern_parameters (pattern_id, user_id, parameter_name, parameter_value, parameter_type)
+                    INSERT INTO strategy_parameters (strategy_id, user_id, parameter_name, parameter_value, parameter_type)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (pattern_id, user_id, parameter_name)
+                    ON CONFLICT (strategy_id, user_id, parameter_name)
                     DO UPDATE SET parameter_value = EXCLUDED.parameter_value, updated_at = CURRENT_TIMESTAMP
                     """,
-                    (pattern_id, current_user["id"], param_name, param_value, type(param_value).__name__)
+                    (strategy_id, current_user["id"], param_name, param_value, type(param_value).__name__)
                 )
             db.commit()
             
@@ -573,9 +573,9 @@ async def update_pattern_parameters(
         log.error(f"Error updating pattern parameters: {e}")
         raise HTTPException(status_code=500, detail="Failed to update pattern parameters")
 
-@router.post("/{pattern_id}/start")
+@router.post("/{strategy_id}/start")
 async def start_pattern(
-    pattern_id: int,
+    strategy_id: int,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
 ):
@@ -584,23 +584,23 @@ async def start_pattern(
         with db.cursor() as cur:
             cur.execute(
                 """
-                UPDATE pattern_performance 
+                UPDATE strategy_performance 
                 SET status = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE pattern_id = %s AND user_id = %s
+                WHERE strategy_id = %s AND user_id = %s
                 """,
-                ("ACTIVE", pattern_id, current_user["id"])
+                ("ACTIVE", strategy_id, current_user["id"])
             )
             db.commit()
             
-        return {"message": f"Pattern {pattern_id} started successfully"}
+        return {"message": f"Pattern {strategy_id} started successfully"}
         
     except Exception as e:
-        log.error(f"Error starting pattern {pattern_id}: {e}")
+        log.error(f"Error starting pattern {strategy_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to start pattern")
 
-@router.post("/{pattern_id}/pause")
+@router.post("/{strategy_id}/pause")
 async def pause_pattern(
-    pattern_id: int,
+    strategy_id: int,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_database)
 ):
@@ -609,18 +609,18 @@ async def pause_pattern(
         with db.cursor() as cur:
             cur.execute(
                 """
-                UPDATE pattern_performance 
+                UPDATE strategy_performance 
                 SET status = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE pattern_id = %s AND user_id = %s
+                WHERE strategy_id = %s AND user_id = %s
                 """,
-                ("PAUSED", pattern_id, current_user["id"])
+                ("PAUSED", strategy_id, current_user["id"])
             )
             db.commit()
             
-        return {"message": f"Pattern {pattern_id} paused successfully"}
+        return {"message": f"Pattern {strategy_id} paused successfully"}
         
     except Exception as e:
-        log.error(f"Error pausing pattern {pattern_id}: {e}")
+        log.error(f"Error pausing pattern {strategy_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to pause pattern")
 
 @router.get("/market-regimes")
@@ -636,19 +636,19 @@ async def get_market_regimes():
                     {
                         "name": "trending",
                         "description": "Strong directional movement",
-                        "suitable_patterns": ["htf_sweep", "volume_breakout"],
+                        "suitable_strategies": ["htf_sweep", "volume_breakout"],
                         "confidence": 0.75
                     },
                     {
                         "name": "ranging",
                         "description": "Sideways consolidation",
-                        "suitable_patterns": ["divergence_capitulation"],
+                        "suitable_strategies": ["divergence_capitulation"],
                         "confidence": 0.60
                     },
                     {
                         "name": "volatile",
                         "description": "High volatility environment",
-                        "suitable_patterns": ["volume_breakout", "divergence_capitulation"],
+                        "suitable_strategies": ["volume_breakout", "divergence_capitulation"],
                         "confidence": 0.55
                     }
                 ]
@@ -704,7 +704,7 @@ async def get_pattern_library():
             {
                 "id": "divergence_capitulation",
                 "name": "Divergence Capitulation Strategy",
-                "description": "Identifies divergence patterns leading to capitulation reversals",
+                "description": "Identifies divergence strategies leading to capitulation reversals",
                 "category": "Reversal",
                 "parameters": {
                     "primary_timeframe": {"type": "select", "options": ["15m", "1h", "4h"], "default": "1h"},
@@ -721,9 +721,9 @@ async def get_pattern_library():
         return {
             "status": "success",
             "data": {
-                "patterns": pattern_library,
+                "strategies": pattern_library,
                 "categories": ["Liquidity", "Momentum", "Reversal"],
-                "total_patterns": len(pattern_library)
+                "total_strategies": len(pattern_library)
             }
         }
         

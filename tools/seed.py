@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Database Seeding Script for Trad Trading System
-Seeds the database with initial trading data, portfolio, and test patterns.
+Seeds the database with initial trading data, portfolio, and test strategies.
 """
 
 import sys
@@ -84,7 +84,7 @@ def seed_trading_history(conn):
         pnl_percent = (pnl / fill_cost) * 100
         
         cur.execute("""
-            INSERT INTO trades (user_id, wallet_id, symbol, trade_type, entry_price, exit_price, pnl_percentage, entry_time, exit_time, pattern_name)
+            INSERT INTO trades (user_id, wallet_id, symbol, trade_type, entry_price, exit_price, pnl_percentage, entry_time, exit_time, strategy_name)
             VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (f'wallet_{i}', symbol, side, price, price * (1 + pnl_percent/100), pnl_percent, trade_time, trade_time + timedelta(hours=random.randint(1, 24)), 'Test Pattern'))
     
@@ -97,7 +97,7 @@ def seed_patterns_and_performance(conn):
     
     cur = conn.cursor()
     
-    # Create patterns
+    # Create strategies
     patterns_data = [
         ('Liquidity Sweep', 'Detects liquidity sweeps above/below key levels', 'Tier1', True),
         ('Volume Breakout', 'High volume breakouts from consolidation', 'Tier1', True),
@@ -108,7 +108,7 @@ def seed_patterns_and_performance(conn):
     
     for name, description, category, is_active in patterns_data:
         cur.execute("""
-            INSERT INTO patterns (name, description, category, is_active, created_by, min_confidence, max_risk_per_trade)
+            INSERT INTO strategies (name, description, category, is_active, created_by, min_confidence, max_risk_per_trade)
             VALUES (%s, %s, %s, %s, 1, 0.7, 0.02)
             ON CONFLICT (name) DO UPDATE SET 
                 description = EXCLUDED.description,
@@ -117,10 +117,10 @@ def seed_patterns_and_performance(conn):
         """, (name, description, category, is_active))
     
     # Add pattern performance data
-    cur.execute("SELECT id, name FROM patterns;")
-    patterns = cur.fetchall()
+    cur.execute("SELECT id, name FROM strategies;")
+    strategies = cur.fetchall()
     
-    for pattern_id, pattern_name in patterns:
+    for strategy_id, strategy_name in strategies:
         # Random but realistic performance metrics
         total_pl = random.uniform(-500, 2000)
         win_rate = random.uniform(0.6, 0.85)
@@ -132,12 +132,12 @@ def seed_patterns_and_performance(conn):
         win_loss_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else 2.0
         
         cur.execute("""
-            INSERT INTO pattern_performance (user_id, pattern_id, symbol, timeframe, total_pnl, win_rate, total_trades, winning_trades, losing_trades, avg_win, avg_loss, profit_factor)
+            INSERT INTO strategy_performance (user_id, strategy_id, symbol, timeframe, total_pnl, win_rate, total_trades, winning_trades, losing_trades, avg_win, avg_loss, profit_factor)
             VALUES (1, %s, 'BTC/USDT', '1h', %s, %s, %s, %s, %s, %s, %s, %s);
-        """, (pattern_id, total_pl, win_rate, total_trades, int(total_trades * win_rate), int(total_trades * (1-win_rate)), avg_win, avg_loss, win_loss_ratio))
+        """, (strategy_id, total_pl, win_rate, total_trades, int(total_trades * win_rate), int(total_trades * (1-win_rate)), avg_win, avg_loss, win_loss_ratio))
     
     conn.commit()
-    print("✅ Pattern data seeded")
+    print("✅ Strategy data seeded")
 
 def seed_equity_history(conn):
     """Create equity curve history"""
