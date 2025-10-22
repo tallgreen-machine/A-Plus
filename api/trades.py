@@ -245,7 +245,7 @@ async def test_trades(db=Depends(get_database)):
                 FROM trades 
                 WHERE user_id = 1
                 ORDER BY executed_at DESC 
-                LIMIT 10
+                LIMIT 100
                 """
             )
             trades = cur.fetchall()
