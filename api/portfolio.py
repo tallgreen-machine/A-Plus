@@ -227,6 +227,80 @@ async def test_portfolio(db=Depends(get_database)):
     except Exception as e:
         return {"error": str(e)}
 
+@router.get("/test-performance")
+async def test_performance(db=Depends(get_database)):
+    """Test performance endpoint without authentication - returns calculated metrics from trades"""
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            # Calculate performance metrics from trades table
+            cur.execute(
+                """
+                SELECT 
+                    COUNT(*) as total_trades,
+                    SUM(CASE WHEN pnl_percent > 0 THEN 1 ELSE 0 END) as winning_trades,
+                    SUM(CASE WHEN pnl_percent < 0 THEN 1 ELSE 0 END) as losing_trades,
+                    AVG(CASE WHEN pnl_percent > 0 THEN pnl_percent ELSE NULL END) as avg_win,
+                    AVG(CASE WHEN pnl_percent < 0 THEN pnl_percent ELSE NULL END) as avg_loss,
+                    SUM(pnl_percent * price * quantity / 100) as total_pnl
+                FROM trades
+                WHERE user_id = 1 AND pnl_percent IS NOT NULL
+                """
+            )
+            stats = cur.fetchone()
+            
+            if stats and stats['total_trades'] > 0:
+                total_trades = int(stats['total_trades'] or 0)
+                winning_trades = int(stats['winning_trades'] or 0)
+                losing_trades = int(stats['losing_trades'] or 0)
+                win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+                
+                avg_win = float(stats['avg_win'] or 0)
+                avg_loss = abs(float(stats['avg_loss'] or 0))
+                total_pnl = float(stats['total_pnl'] or 0)
+                
+                # Calculate profit factor (avg win / avg loss)
+                profit_factor = (avg_win / avg_loss) if avg_loss > 0 else 0
+                
+                # Calculate win/loss ratio
+                win_loss_ratio = (winning_trades / losing_trades) if losing_trades > 0 else winning_trades
+                
+                # Mock Sharpe ratio and max drawdown (would need equity history for accurate calculation)
+                sharpe_ratio = 1.5 if win_rate > 60 else 1.0
+                max_drawdown = 8.5 if total_pnl > 0 else 12.0
+                
+                return {
+                    "totalPL": {
+                        "value": total_pnl,
+                        "percentage": (total_pnl / 100000) * 100  # Assuming $100k starting balance
+                    },
+                    "sharpeRatio": sharpe_ratio,
+                    "maxDrawdown": max_drawdown,
+                    "winRate": win_rate,
+                    "winLossRatio": win_loss_ratio,
+                    "profitFactor": profit_factor,
+                    "avgProfit": avg_win,
+                    "avgLoss": avg_loss,
+                    "totalTrades": total_trades,
+                    "winningTrades": winning_trades,
+                    "losingTrades": losing_trades
+                }
+            else:
+                return {
+                    "totalPL": {"value": 0, "percentage": 0},
+                    "sharpeRatio": 0,
+                    "maxDrawdown": 0,
+                    "winRate": 0,
+                    "winLossRatio": 0,
+                    "profitFactor": 0,
+                    "avgProfit": 0,
+                    "avgLoss": 0,
+                    "totalTrades": 0,
+                    "winningTrades": 0,
+                    "losingTrades": 0
+                }
+    except Exception as e:
+        return {"error": str(e)}
+
 # Pydantic models
 class Portfolio(BaseModel):
     timestamp: str

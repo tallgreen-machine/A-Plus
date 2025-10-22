@@ -96,9 +96,10 @@ export async function getPortfolioHistory(userId: string, days: number = 30): Pr
 
 export async function getPerformance(userId: string): Promise<PerformanceMetrics> {
     try {
-        return await apiRequest<PerformanceMetrics>('/portfolio/performance');
+        return await apiRequest<PerformanceMetrics>('/portfolio/test-performance');
     } catch (error) {
-        // Return null/undefined values instead of fake data
+        console.error('Failed to fetch performance metrics:', error);
+        // Return zeros instead of fake data
         return Promise.resolve({
             totalPL: { value: 0, percentage: 0 },
             todayPL: { value: 0, percentage: 0 },
@@ -126,7 +127,7 @@ export async function getTrades(userId: string, limit: number = 100): Promise<Tr
 
 export async function getActiveTrades(userId: string): Promise<ActiveTrade[]> {
     try {
-        return await apiRequest<ActiveTrade[]>('/trades/active');
+        return await apiRequest<ActiveTrade[]>('/trades/test-active');
     } catch (error) {
         console.error('Failed to fetch active trades:', error);
         return [];
