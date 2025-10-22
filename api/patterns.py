@@ -1,6 +1,6 @@
 """
-Pattern Performance API endpoints
-Handles pattern tracking, analytics, and parameter management
+Strategy Performance API endpoints
+Enhanced with multi-dimensional strategy tracking and analytics
 """
 
 from fastapi import APIRouter, HTTPException, Depends
@@ -10,6 +10,12 @@ from datetime import datetime, timedelta
 import psycopg2.extras
 from decimal import Decimal
 from enum import Enum
+import sys
+from pathlib import Path
+
+# Add project root to path for system integration
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
 
 from api.database import get_database
 from api.auth_utils import get_current_user
@@ -18,7 +24,173 @@ import logging
 # Configure logging
 log = logging.getLogger(__name__)
 
+# Import enhanced strategy system
+try:
+    from ml.trained_assets_manager import TrainedAssetsManager
+    from strategies.htf_sweep import HTFSweepStrategy
+    from strategies.volume_breakout import VolumeBreakoutStrategy
+    from strategies.divergence_capitulation import DivergenceCapitulationStrategy
+    
+    # Initialize system components
+    trained_assets_manager = TrainedAssetsManager()
+    strategies_system_available = True
+    log.info("Patterns API: Enhanced strategy system initialized")
+    
+except Exception as e:
+    strategies_system_available = False
+    trained_assets_manager = None
+    log.warning(f"Patterns API: Enhanced strategy system not available: {e}")
+
 router = APIRouter(prefix="/api/patterns", tags=["patterns"])
+
+# Enhanced API endpoints for strategy performance
+
+@router.get("/strategy-performance")
+async def get_strategy_performance():
+    """Get performance metrics for all strategies with multi-dimensional data"""
+    try:
+        if not strategies_system_available or not trained_assets_manager:
+            # Fallback to basic response
+            return {
+                "status": "limited",
+                "message": "Enhanced strategy system unavailable, returning basic data",
+                "data": {}
+            }
+        
+        performance_data = {}
+        
+        # Get performance for each supported strategy
+        for strategy_id in trained_assets_manager.supported_strategies:
+            strategy_metrics = {
+                'strategy_id': strategy_id,
+                'name': strategy_id.replace('_', ' ').title(),
+                'status': 'Active',
+                'total_trained_combinations': 0,
+                'successful_combinations': 0,
+                'average_accuracy': 0.0,
+                'best_accuracy': 0.0,
+                'regime_performance': {},
+                'timeframe_performance': {},
+                'asset_coverage': 0
+            }
+            
+            # Analyze trained strategies for this strategy type
+            strategy_accuracies = []
+            regime_stats = {}
+            timeframe_stats = {}
+            
+            for strategy_key, trained_strategy in trained_assets_manager.trained_strategies.items():
+                if trained_strategy.strategy_id == strategy_id:
+                    strategy_metrics['total_trained_combinations'] += 1
+                    
+                    if trained_strategy.accuracy > 0:
+                        strategy_metrics['successful_combinations'] += 1
+                        strategy_accuracies.append(trained_strategy.accuracy)
+                        
+                        # Regime stats
+                        regime = trained_strategy.market_regime
+                        if regime not in regime_stats:
+                            regime_stats[regime] = []
+                        regime_stats[regime].append(trained_strategy.accuracy)
+                        
+                        # Timeframe stats
+                        timeframe = trained_strategy.timeframe
+                        if timeframe not in timeframe_stats:
+                            timeframe_stats[timeframe] = []
+                        timeframe_stats[timeframe].append(trained_strategy.accuracy)
+            
+            # Calculate metrics
+            if strategy_accuracies:
+                strategy_metrics['average_accuracy'] = sum(strategy_accuracies) / len(strategy_accuracies)
+                strategy_metrics['best_accuracy'] = max(strategy_accuracies)
+            
+            # Regime performance
+            for regime, accuracies in regime_stats.items():
+                strategy_metrics['regime_performance'][regime] = {
+                    'count': len(accuracies),
+                    'average_accuracy': sum(accuracies) / len(accuracies),
+                    'best_accuracy': max(accuracies)
+                }
+            
+            # Timeframe performance
+            for timeframe, accuracies in timeframe_stats.items():
+                strategy_metrics['timeframe_performance'][timeframe] = {
+                    'count': len(accuracies),
+                    'average_accuracy': sum(accuracies) / len(accuracies),
+                    'best_accuracy': max(accuracies)
+                }
+            
+            # Asset coverage
+            unique_assets = set()
+            for strategy_key, trained_strategy in trained_assets_manager.trained_strategies.items():
+                if trained_strategy.strategy_id == strategy_id:
+                    unique_assets.add(f"{trained_strategy.exchange}_{trained_strategy.symbol}")
+            strategy_metrics['asset_coverage'] = len(unique_assets)
+            
+            performance_data[strategy_id] = strategy_metrics
+        
+        return {
+            "status": "success",
+            "data": performance_data
+        }
+        
+    except Exception as e:
+        log.error(f"Error getting strategy performance: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/trained-assets-summary")
+async def get_trained_assets_summary():
+    """Get summary of all trained assets with their strategy coverage"""
+    try:
+        if not strategies_system_available or not trained_assets_manager:
+            raise HTTPException(status_code=503, detail="Strategy system unavailable")
+        
+        assets_summary = []
+        
+        for asset_key, asset in trained_assets_manager.trained_assets.items():
+            asset_info = {
+                'asset_key': asset_key,
+                'symbol': asset.symbol,
+                'exchange': asset.exchange,
+                'total_strategies': asset.total_strategies,
+                'last_updated': asset.last_updated,
+                'coverage_metrics': asset.coverage_metrics,
+                'strategies_breakdown': {}
+            }
+            
+            # Count strategies by type
+            for strategy_key, trained_strategy in asset.strategies.items():
+                strategy_id = trained_strategy.strategy_id
+                if strategy_id not in asset_info['strategies_breakdown']:
+                    asset_info['strategies_breakdown'][strategy_id] = {
+                        'count': 0,
+                        'average_accuracy': 0.0,
+                        'regimes': set(),
+                        'timeframes': set()
+                    }
+                
+                asset_info['strategies_breakdown'][strategy_id]['count'] += 1
+                asset_info['strategies_breakdown'][strategy_id]['regimes'].add(trained_strategy.market_regime)
+                asset_info['strategies_breakdown'][strategy_id]['timeframes'].add(trained_strategy.timeframe)
+            
+            # Convert sets to lists for JSON serialization
+            for strategy_data in asset_info['strategies_breakdown'].values():
+                strategy_data['regimes'] = list(strategy_data['regimes'])
+                strategy_data['timeframes'] = list(strategy_data['timeframes'])
+            
+            assets_summary.append(asset_info)
+        
+        return {
+            "status": "success", 
+            "data": {
+                "total_assets": len(assets_summary),
+                "assets": assets_summary[:20]  # Limit to first 20 for performance
+            }
+        }
+        
+    except Exception as e:
+        log.error(f"Error getting trained assets summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # TEMPORARY: Test endpoints without authentication
 @router.get("/test-performance")
@@ -400,3 +572,161 @@ async def update_pattern_parameters(
     except Exception as e:
         log.error(f"Error updating pattern parameters: {e}")
         raise HTTPException(status_code=500, detail="Failed to update pattern parameters")
+
+@router.post("/{pattern_id}/start")
+async def start_pattern(
+    pattern_id: int,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """Start a pattern (set to ACTIVE status)"""
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE pattern_performance 
+                SET status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE pattern_id = %s AND user_id = %s
+                """,
+                ("ACTIVE", pattern_id, current_user["id"])
+            )
+            db.commit()
+            
+        return {"message": f"Pattern {pattern_id} started successfully"}
+        
+    except Exception as e:
+        log.error(f"Error starting pattern {pattern_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start pattern")
+
+@router.post("/{pattern_id}/pause")
+async def pause_pattern(
+    pattern_id: int,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_database)
+):
+    """Pause a pattern (set to PAUSED status)"""
+    try:
+        with db.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE pattern_performance 
+                SET status = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE pattern_id = %s AND user_id = %s
+                """,
+                ("PAUSED", pattern_id, current_user["id"])
+            )
+            db.commit()
+            
+        return {"message": f"Pattern {pattern_id} paused successfully"}
+        
+    except Exception as e:
+        log.error(f"Error pausing pattern {pattern_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to pause pattern")
+
+@router.get("/market-regimes")
+async def get_market_regimes():
+    """Get market regime analysis for pattern selection"""
+    try:
+        if not strategies_system_available or not trained_assets_manager:
+            # Return basic regime data
+            return {
+                "current_regime": "trending",
+                "regime_confidence": 0.75,
+                "regimes": [
+                    {
+                        "name": "trending",
+                        "description": "Strong directional movement",
+                        "suitable_patterns": ["htf_sweep", "volume_breakout"],
+                        "confidence": 0.75
+                    },
+                    {
+                        "name": "ranging",
+                        "description": "Sideways consolidation",
+                        "suitable_patterns": ["divergence_capitulation"],
+                        "confidence": 0.60
+                    },
+                    {
+                        "name": "volatile",
+                        "description": "High volatility environment",
+                        "suitable_patterns": ["volume_breakout", "divergence_capitulation"],
+                        "confidence": 0.55
+                    }
+                ]
+            }
+        
+        # Get regime analysis from trained assets manager
+        regime_analysis = trained_assets_manager.analyze_market_regimes()
+        
+        return {
+            "status": "success",
+            "data": regime_analysis
+        }
+        
+    except Exception as e:
+        log.error(f"Error getting market regimes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/pattern-library")
+async def get_pattern_library():
+    """Get available pattern templates and definitions"""
+    try:
+        pattern_library = [
+            {
+                "id": "htf_sweep",
+                "name": "HTF Sweep Strategy",
+                "description": "Identifies liquidity sweeps on higher timeframes for entry opportunities",
+                "category": "Liquidity",
+                "parameters": {
+                    "primary_timeframe": {"type": "select", "options": ["5m", "15m", "1h"], "default": "15m"},
+                    "macro_timeframe": {"type": "select", "options": ["1h", "4h", "1d"], "default": "4h"},
+                    "risk_reward_ratio": {"type": "number", "min": 1.0, "max": 5.0, "default": 2.0},
+                    "stop_loss_atr": {"type": "number", "min": 0.5, "max": 3.0, "default": 1.5}
+                },
+                "market_conditions": ["trending", "volatile"],
+                "timeframes": ["5m", "15m", "1h"],
+                "asset_types": ["crypto", "forex", "stocks"]
+            },
+            {
+                "id": "volume_breakout",
+                "name": "Volume Breakout Strategy",
+                "description": "Trades breakouts confirmed by volume spikes",
+                "category": "Momentum",
+                "parameters": {
+                    "primary_timeframe": {"type": "select", "options": ["5m", "15m", "1h"], "default": "15m"},
+                    "volume_threshold": {"type": "number", "min": 1.5, "max": 5.0, "default": 2.0},
+                    "breakout_confirmation": {"type": "number", "min": 0.1, "max": 1.0, "default": 0.5},
+                    "risk_reward_ratio": {"type": "number", "min": 1.0, "max": 5.0, "default": 1.8}
+                },
+                "market_conditions": ["trending", "volatile"],
+                "timeframes": ["5m", "15m", "1h"],
+                "asset_types": ["crypto", "stocks"]
+            },
+            {
+                "id": "divergence_capitulation",
+                "name": "Divergence Capitulation Strategy",
+                "description": "Identifies divergence patterns leading to capitulation reversals",
+                "category": "Reversal",
+                "parameters": {
+                    "primary_timeframe": {"type": "select", "options": ["15m", "1h", "4h"], "default": "1h"},
+                    "rsi_period": {"type": "number", "min": 10, "max": 30, "default": 14},
+                    "divergence_lookback": {"type": "number", "min": 5, "max": 20, "default": 10},
+                    "risk_reward_ratio": {"type": "number", "min": 1.5, "max": 4.0, "default": 2.5}
+                },
+                "market_conditions": ["ranging", "volatile"],
+                "timeframes": ["15m", "1h", "4h"],
+                "asset_types": ["crypto", "forex", "stocks"]
+            }
+        ]
+        
+        return {
+            "status": "success",
+            "data": {
+                "patterns": pattern_library,
+                "categories": ["Liquidity", "Momentum", "Reversal"],
+                "total_patterns": len(pattern_library)
+            }
+        }
+        
+    except Exception as e:
+        log.error(f"Error getting pattern library: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,6 +1,6 @@
 """
 Training Pipeline API endpoints
-Integrates with existing training system for AI pattern optimization
+Enhanced integration with multi-dimensional strategy training system
 """
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
@@ -13,6 +13,12 @@ from enum import Enum
 import subprocess
 import uuid
 import json
+import sys
+from pathlib import Path
+
+# Add project root to path for system integration
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
 
 from api.database import get_database
 from api.auth_utils import get_current_user
@@ -21,7 +27,236 @@ import logging
 # Configure logging
 log = logging.getLogger(__name__)
 
+# Import enhanced training system
+try:
+    from ml.trained_assets_manager import TrainedAssetsManager
+    
+    # Initialize system components
+    trained_assets_manager = TrainedAssetsManager()
+    training_system_available = True
+    log.info("Training API: Enhanced multi-dimensional training system initialized")
+    
+except Exception as e:
+    training_system_available = False
+    trained_assets_manager = None
+    log.warning(f"Training API: Enhanced training system not available: {e}")
+
 router = APIRouter(prefix="/api/training", tags=["training"])
+
+# Enhanced API endpoints for multi-dimensional training
+
+@router.get("/system-status")
+async def get_training_system_status():
+    """Get status of the enhanced training system"""
+    try:
+        if not training_system_available or not trained_assets_manager:
+            return {
+                "status": "unavailable",
+                "message": "Enhanced training system not initialized",
+                "capabilities": {}
+            }
+        
+        return {
+            "status": "available",
+            "message": "Multi-dimensional training system operational",
+            "capabilities": {
+                "supported_strategies": trained_assets_manager.supported_strategies,
+                "market_regimes": trained_assets_manager.market_regimes,
+                "timeframes": trained_assets_manager.timeframes,
+                "combinations_per_asset": (len(trained_assets_manager.supported_strategies) * 
+                                         len(trained_assets_manager.market_regimes) * 
+                                         len(trained_assets_manager.timeframes)),
+                "available_combinations": len(trained_assets_manager.available_combinations),
+                "total_trained_assets": len(trained_assets_manager.trained_assets),
+                "total_trained_strategies": len(trained_assets_manager.trained_strategies)
+            }
+        }
+    except Exception as e:
+        log.error(f"Error getting training system status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/trained-assets")
+async def get_trained_assets_info():
+    """Get information about trained assets and strategies"""
+    try:
+        if not training_system_available or not trained_assets_manager:
+            raise HTTPException(status_code=503, detail="Training system unavailable")
+        
+        assets_info = {
+            'total_assets': len(trained_assets_manager.trained_assets),
+            'total_strategies': len(trained_assets_manager.trained_strategies),
+            'supported_strategies': trained_assets_manager.supported_strategies,
+            'market_regimes': trained_assets_manager.market_regimes,
+            'timeframes': trained_assets_manager.timeframes,
+            'combinations_per_asset': len(trained_assets_manager.supported_strategies) * 
+                                   len(trained_assets_manager.market_regimes) * 
+                                   len(trained_assets_manager.timeframes),
+            'available_combinations': len(trained_assets_manager.available_combinations)
+        }
+        
+        # Get sample of trained assets
+        sample_assets = {}
+        for i, (asset_key, asset) in enumerate(trained_assets_manager.trained_assets.items()):
+            if i < 10:  # Show first 10 assets
+                sample_assets[asset_key] = {
+                    'symbol': asset.symbol,
+                    'exchange': asset.exchange,
+                    'total_strategies': asset.total_strategies,
+                    'last_updated': asset.last_updated,
+                    'coverage_metrics': asset.coverage_metrics
+                }
+        
+        assets_info['sample_assets'] = sample_assets
+        
+        return {
+            "status": "success",
+            "data": assets_info
+        }
+    except Exception as e:
+        log.error(f"Error getting trained assets info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/market-regimes")
+async def get_market_regimes():
+    """Get current market regime detection for monitored symbols"""
+    try:
+        if not training_system_available or not trained_assets_manager:
+            raise HTTPException(status_code=503, detail="Training system unavailable")
+        
+        # Get sample of symbols for regime detection
+        test_symbols = ['BTC/USDT', 'ETH/USDT', 'ADA/USDT', 'SOL/USDT', 'MATIC/USDT']
+        test_exchange = 'binanceus'
+        
+        regime_data = {}
+        for symbol in test_symbols:
+            try:
+                regime = trained_assets_manager._detect_current_market_regime(symbol, test_exchange)
+                regime_data[symbol] = {
+                    'regime': regime,
+                    'exchange': test_exchange,
+                    'confidence': 'Medium',  # Could be enhanced with actual confidence calculation
+                    'last_updated': datetime.now().isoformat()
+                }
+            except Exception as e:
+                regime_data[symbol] = {
+                    'regime': 'Unknown',
+                    'exchange': test_exchange,
+                    'error': str(e)
+                }
+        
+        return {
+            "status": "success",
+            "data": regime_data
+        }
+    except Exception as e:
+        log.error(f"Error getting market regimes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/start-multi-dimensional")
+async def start_multi_dimensional_training(
+    background_tasks: BackgroundTasks,
+    symbols: List[str],
+    exchanges: List[str] = ["binanceus"],
+    min_samples: int = 200
+):
+    """Start multi-dimensional training campaign"""
+    try:
+        if not training_system_available or not trained_assets_manager:
+            raise HTTPException(status_code=503, detail="Training system unavailable")
+        
+        # Generate job ID
+        job_id = str(uuid.uuid4())
+        
+        # Log the training request
+        log.info(f"Starting multi-dimensional training job {job_id}")
+        log.info(f"Symbols: {symbols}")
+        log.info(f"Exchanges: {exchanges}")
+        log.info(f"Min samples: {min_samples}")
+        
+        # Add background task for training
+        background_tasks.add_task(
+            run_multi_dimensional_training,
+            job_id,
+            symbols,
+            exchanges,
+            min_samples
+        )
+        
+        return {
+            "status": "success",
+            "job_id": job_id,
+            "message": f"Multi-dimensional training started for {len(symbols)} symbols across {len(exchanges)} exchanges",
+            "estimated_combinations": len(symbols) * len(exchanges) * len(trained_assets_manager.supported_strategies) * len(trained_assets_manager.market_regimes) * len(trained_assets_manager.timeframes)
+        }
+        
+    except Exception as e:
+        log.error(f"Error starting multi-dimensional training: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+async def run_multi_dimensional_training(job_id: str, symbols: List[str], exchanges: List[str], min_samples: int):
+    """Background task for multi-dimensional training"""
+    try:
+        log.info(f"Executing multi-dimensional training job {job_id}")
+        
+        # Run the training campaign
+        results = trained_assets_manager.train_multi_dimensional_strategies(
+            symbols=symbols,
+            exchanges=exchanges,
+            min_samples=min_samples
+        )
+        
+        log.info(f"Multi-dimensional training job {job_id} completed")
+        log.info(f"Success rate: {results.get('success_rate', 0):.1f}%")
+        log.info(f"Successful trainings: {results.get('successful_trainings', 0)}")
+        
+    except Exception as e:
+        log.error(f"Multi-dimensional training job {job_id} failed: {e}")
+
+@router.get("/strategy-parameters/{symbol}/{exchange}/{strategy_id}")
+async def get_strategy_parameters(
+    symbol: str,
+    exchange: str,
+    strategy_id: str,
+    market_regime: Optional[str] = None,
+    timeframe: Optional[str] = None
+):
+    """Get optimized strategy parameters for specific conditions"""
+    try:
+        if not training_system_available or not trained_assets_manager:
+            raise HTTPException(status_code=503, detail="Training system unavailable")
+        
+        # Get strategy parameters
+        params = trained_assets_manager.get_strategy_parameters(
+            symbol=symbol,
+            exchange=exchange,
+            strategy_id=strategy_id,
+            market_regime=market_regime,
+            timeframe=timeframe
+        )
+        
+        if not params:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No trained parameters found for {strategy_id} on {exchange}/{symbol}"
+            )
+        
+        return {
+            "status": "success",
+            "data": {
+                "symbol": symbol,
+                "exchange": exchange,
+                "strategy_id": strategy_id,
+                "market_regime": params.get('market_regime'),
+                "timeframe": params.get('timeframe'),
+                "parameters": params
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error getting strategy parameters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Enums
 class TrainingPhase(str, Enum):

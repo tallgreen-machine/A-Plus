@@ -1,19 +1,38 @@
-# Trad Trading Bot Dashboard: Technical Specification
+# TradePulse IQ Dashboard: Technical Specification
+
+## ⚠️ DOCUMENT SUPERSEDED
+
+**This document has been superseded by the new TradePulse IQ Dashboard implementation.**
+
+**Current Implementation:**
+- **Platform**: FastAPI (Python) + React (TypeScript)
+- **Live URL**: http://138.68.245.159:8000
+- **API Documentation**: http://138.68.245.159:8000/docs
+- **Architecture**: See main [README.md](../README.md) for current architecture
+
+**Previous Implementation Referenced Below:**
+This document originally described a Flask-based dashboard that has been replaced with the enhanced TradePulse IQ system.
+
+---
+
+# LEGACY: Trad Trading Bot Dashboard: Technical Specification
 
 ## 1. Overview
 
-This document outlines the technical functionality and API endpoints for the Trad Trading Bot's web dashboard. The purpose of this dashboard is to provide a real-time monitoring and control interface for the automated trading bot.
+**NOTE: This section describes the legacy Flask implementation that has been replaced.**
 
-The dashboard is a Flask web application that communicates with the bot's backend services and its PostgreSQL database.
+This document outlines the technical functionality and API endpoints for the original Trad Trading Bot's web dashboard. The purpose of this dashboard was to provide a real-time monitoring and control interface for the automated trading bot.
 
-## 2. Existing Functionality & API Endpoints
+The original dashboard was a Flask web application that communicated with the bot's backend services and its PostgreSQL database.
 
-The current dashboard provides a simple, real-time view of the bot's status. The front-end polls the following API endpoints every 5 seconds.
+## 2. Legacy Functionality & API Endpoints
 
-### **GET `/api/portfolio`**
+The original dashboard provided a simple, real-time view of the bot's status. The front-end polled the following API endpoints every 5 seconds.
 
--   **Function:** Retrieves the most recent portfolio status and a list of current asset holdings.
--   **Data Source:** Reads from the `portfolio_history` and `trades` tables in the PostgreSQL database.
+### **GET `/api/portfolio`** (LEGACY)
+
+-   **Function:** Retrieved the most recent portfolio status and a list of current asset holdings.
+-   **Data Source:** Read from the `portfolio_history` and `trades` tables in the PostgreSQL database.
 -   **JSON Response Example:**
     ```json
     {

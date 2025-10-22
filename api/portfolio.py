@@ -1,23 +1,165 @@
 """
 Portfolio API endpoints
 Handles portfolio data, holdings, equity history, and performance metrics
+Enhanced with system integration for risk management and OCO orders
 """
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timedelta
 import psycopg2.extras
 from decimal import Decimal
 import logging
+import sys
+from pathlib import Path
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timedelta
+import psycopg2.extras
+from decimal import Decimal
+from enum import Enum
 
-from api.database import get_database
-from api.auth_utils import get_current_user
+# Add project root to path for system integration
+project_root = Path(__file__).resolve().parent.parent
+sys.path.append(str(project_root))
 
 # Configure logging
+import logging
 log = logging.getLogger(__name__)
 
+# Try to import auth and database utils
+try:
+    from api.database import get_database
+    from api.auth_utils import get_current_user
+    auth_available = True
+except Exception as e:
+    auth_available = False
+    log.warning(f"Auth/Database utils not available: {e}")
+    # Create dummy functions for now
+    def get_current_user():
+        return {"id": 1, "username": "admin"}
+    def get_database():
+        return None
+
+# Import system components for enhanced functionality
+try:
+    from core.execution_core import ExecutionCore
+    from core.event_system import EventBus
+    from core.data_handler import DataHandler
+    from ml.trained_assets_manager import TrainedAssetsManager
+    
+    # Initialize system components with default config
+    event_bus = EventBus()
+    # Initialize data handler with default symbols and timeframes
+    default_symbols = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT']
+    default_timeframes = ['1m', '5m', '15m', '1h', '4h']
+    data_handler = DataHandler(event_bus, default_symbols, default_timeframes)
+    execution_core = ExecutionCore(event_bus, data_handler)
+    trained_assets_manager = TrainedAssetsManager()
+    
+    system_available = True
+    log.info("Portfolio API: Enhanced system components initialized")
+    
+except Exception as e:
+    system_available = False
+    execution_core = None
+    trained_assets_manager = None
+    log.warning(f"Portfolio API: System components not available: {e}")
+
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+
+# Enhanced API endpoints for system integration
+
+@router.get("/summary")
+async def get_portfolio_summary(current_user: dict = Depends(get_current_user)):
+    """Get comprehensive portfolio summary with risk metrics and OCO status"""
+    try:
+        if not system_available or not execution_core:
+            raise HTTPException(status_code=503, detail="Enhanced portfolio system unavailable")
+        
+        summary = execution_core.get_portfolio_summary()
+        return {
+            "status": "success",
+            "data": summary
+        }
+    except Exception as e:
+        log.error(f"Error getting portfolio summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/risk-management")
+async def get_risk_management(current_user: dict = Depends(get_current_user)):
+    """Get current risk management status for all wallets"""
+    try:
+        if not system_available or not execution_core:
+            raise HTTPException(status_code=503, detail="Risk management system unavailable")
+        
+        portfolio_summary = execution_core.get_portfolio_summary()
+        
+        risk_data = {
+            'total_wallets': portfolio_summary.get('total_wallets', 0),
+            'total_equity': portfolio_summary.get('total_equity', 0.0),
+            'total_risk': portfolio_summary.get('total_risk', 0.0),
+            'oco_summary': portfolio_summary.get('oco_summary', {}),
+            'wallets': {}
+        }
+        
+        # Enhanced wallet-specific risk metrics
+        for wallet_id, wallet_data in portfolio_summary.get('wallets', {}).items():
+            risk_data['wallets'][wallet_id] = {
+                'equity': wallet_data.get('equity', 0.0),
+                'drawdown_percent': wallet_data.get('drawdown_percent', 0.0),
+                'portfolio_risk_percent': wallet_data.get('portfolio_risk_percent', 0.0),
+                'open_positions': wallet_data.get('open_positions', 0),
+                'trading_allowed': wallet_data.get('trading_allowed', False),
+                'risk_status': 'Healthy' if wallet_data.get('drawdown_percent', 0) < 10 else 
+                             'Warning' if wallet_data.get('drawdown_percent', 0) < 20 else 'Critical'
+            }
+        
+        return {
+            "status": "success",
+            "data": risk_data
+        }
+    except Exception as e:
+        log.error(f"Error getting risk management data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/oco-orders")
+async def get_oco_orders(current_user: dict = Depends(get_current_user)):
+    """Get active OCO orders across all wallets"""
+    try:
+        if not system_available or not execution_core:
+            raise HTTPException(status_code=503, detail="OCO system unavailable")
+        
+        active_oco_orders = execution_core.get_active_oco_orders()
+        
+        oco_data = []
+        for oco_pair in active_oco_orders:
+            oco_data.append({
+                'id': oco_pair.id,
+                'symbol': oco_pair.symbol,
+                'wallet_id': oco_pair.wallet_id,
+                'exchange': oco_pair.exchange,
+                'status': oco_pair.status.value,
+                'stop_loss_price': oco_pair.stop_loss_price,
+                'take_profit_price': oco_pair.take_profit_price,
+                'quantity': oco_pair.quantity,
+                'native_oco_supported': oco_pair.native_oco_supported,
+                'created_at': oco_pair.created_at,
+                'linked_orders': len(oco_pair.linked_orders)
+            })
+        
+        return {
+            "status": "success",
+            "data": {
+                'active_oco_orders': oco_data,
+                'total_active': len(oco_data)
+            }
+        }
+    except Exception as e:
+        log.error(f"Error getting OCO orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # TEMPORARY: Test endpoint without authentication
 @router.get("/test")

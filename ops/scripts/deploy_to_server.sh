@@ -55,13 +55,12 @@ sudo mkdir -p /etc/trad
 sudo touch /var/log/trad.log || true
 sudo cp "${DEST}/ops/systemd/trad.service" /etc/systemd/system/
 
-# Dashboard service
+# TradePulse IQ Dashboard service (FastAPI backend)
 sudo touch /var/log/trad-dashboard.log || true
 sudo cp "${DEST}/ops/systemd/dashboard.service" /etc/systemd/system/
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now trad.service
-# The dashboard service will be started after its venv is set up.
 EOF
 
 echo "[deploy] installing logrotate config"
@@ -89,10 +88,6 @@ sudo apt-get install -y python3-venv postgresql-client
 python3 -m venv "${DEST}/.venv"
 "${DEST}/.venv/bin/pip" install -r "${DEST}/requirements.txt"
 "${DEST}/.venv/bin/pip" install -r "${DEST}/policy/requirements.txt"
-
-# Create venv for dashboard
-python3 -m venv "${DEST}/dashboard/.venv"
-"${DEST}/dashboard/.venv/bin/pip" install -r "${DEST}/dashboard/requirements.txt"
 EOF
 
 echo "[deploy] checking postgres authentication config"
@@ -104,7 +99,7 @@ sudo cat "$HBA_FILE"
 echo "--- end of pg_hba.conf ---"
 EOF
 
-echo "[deploy] initializing database and starting dashboard"
+echo "[deploy] initializing database and starting TradePulse IQ dashboard"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
 DEST="${DEST:-/srv/trad}"
@@ -132,9 +127,9 @@ fi
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -a -f "${DEST}/sql/dashboard_init.sql"
 )
 
-# Start the dashboard service
-sudo systemctl restart dashboard.service
-echo "Dashboard service restarted."
+# Start the TradePulse IQ dashboard service (FastAPI backend)
+sudo systemctl enable --now dashboard.service
+echo "TradePulse IQ dashboard service started."
 EOF
 
 echo "[deploy] restarting trad service"
