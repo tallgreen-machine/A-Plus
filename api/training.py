@@ -27,19 +27,12 @@ import logging
 # Configure logging
 log = logging.getLogger(__name__)
 
-# Import enhanced training system
-try:
-    from ml.trained_assets_manager import TrainedAssetsManager
-    
-    # Initialize system components
-    trained_assets_manager = TrainedAssetsManager()
-    training_system_available = True
-    log.info("Training API: Enhanced multi-dimensional training system initialized")
-    
-except Exception as e:
-    training_system_available = False
-    trained_assets_manager = None
-    log.warning(f"Training API: Enhanced training system not available: {e}")
+# V2 Training System (RL system archived)
+# The RL-based training system (ml/ and policy/) has been archived.
+# V2 uses rule-based parameter optimization in training/ directory.
+training_system_available = False
+trained_assets_manager = None
+log.info("Training API: V2 system - RL components archived, awaiting implementation")
 
 router = APIRouter(prefix="/api/training", tags=["training"])
 
@@ -424,39 +417,22 @@ async def update_training_status(job_id: str, status_update: dict):
 async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
     """Background task to run the actual ML training job"""
     try:
-        from ml.real_training_runner import RealTrainingRunner
+        # TODO: Implement V2 training runner
+        # from training.training_runner import TrainingRunner
         
-        log.info(f"Starting real ML training for job {job_id}")
+        log.warning(f"Training job {job_id} - V2 training system not yet implemented")
         
-        # Create training runner with callback
-        runner = RealTrainingRunner(
-            job_id=job_id,
-            symbols=request.symbols,
-            patterns=request.patterns,
-            update_callback=update_training_status
-        )
-        
-        # Execute the training
-        results = await runner.run_training()
-        
-        # Mark as complete with results
+        # Mark as failed (placeholder)
         if job_id in training_jobs:
             training_jobs[job_id].update({
-                "status": "COMPLETE",
+                "status": "FAILED",
                 "phase": TrainingPhase.COMPLETE,
-                "progress": 100.0,
-                "message": "Training completed successfully!",
-                "eta": "Complete",
-                "completedAt": datetime.utcnow().isoformat(),
-                "results": results
+                "progress": 0.0,
+                "message": "V2 training system not yet implemented",
+                "error": "RL system archived - V2 implementation in progress"
             })
             
-        log.info(f"Training job {job_id} completed successfully")
-        
-    except ImportError as e:
-        log.error(f"Failed to import training dependencies: {e}")
-        # Fall back to simulation mode
-        await run_simulation_training_job(job_id, request, user_id)
+        log.warning(f"Training job {job_id} - V2 system not ready")
         
     except Exception as e:
         log.error(f"Error in training job {job_id}: {e}")
