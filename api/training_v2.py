@@ -19,6 +19,7 @@ import asyncio
 import uuid
 import logging
 import traceback
+import json
 
 from training.data_collector import DataCollector
 from training.backtest_engine import BacktestEngine
@@ -485,7 +486,7 @@ async def start_training(
             request.optimizer,
             request.lookback_days,
             request.n_iterations,
-            {},  # parameter_space (filled by training task)
+            json.dumps({}),  # parameter_space as JSON string
             datetime.now(timezone.utc)
         )
         
