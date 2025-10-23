@@ -194,8 +194,6 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
         );
     };
     
-    };
-    
     const renderStrategySidebar = () => {
         return (
             <div className="flex flex-col h-full">
