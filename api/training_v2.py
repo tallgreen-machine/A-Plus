@@ -173,15 +173,15 @@ async def run_training_task(
         
         log.info(f"Training job {job_id} started: {request.strategy} {request.symbol}")
         
-        # ===== Step 1: Data Collection =====
-        await progress.start('data_collection', {
+        # ===== Step 1: Data Preparation =====
+        await progress.start('data_preparation', {
             'symbol': request.symbol,
             'exchange': request.exchange,
             'timeframe': request.timeframe,
             'lookback_days': request.lookback_days
         })
         
-        log.info(f"[{job_id}] Step 1/4: Collecting data...")
+        log.info(f"[{job_id}] Step 1/4: Preparing data...")
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=request.symbol,

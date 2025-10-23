@@ -26,7 +26,7 @@ class ProgressTracker:
     """
     
     STEPS = {
-        'data_collection': {'number': 1, 'name': 'Data Collection', 'weight': 0.25},
+        'data_preparation': {'number': 1, 'name': 'Preparing Data', 'weight': 0.25},
         'optimization': {'number': 2, 'name': 'Optimization', 'weight': 0.50},
         'validation': {'number': 3, 'name': 'Validation', 'weight': 0.20},
         'save_config': {'number': 4, 'name': 'Saving Configuration', 'weight': 0.05},
