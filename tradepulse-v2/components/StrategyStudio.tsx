@@ -73,6 +73,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
     const [selectedExchange] = useState<string>('binanceus');
     const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
+    const [optimizer, setOptimizer] = useState<string>('bayesian');
     const [lookbackDays, setLookbackDays] = useState<number>(30);
     const [nIterations, setNIterations] = useState<number>(20);
     
@@ -116,7 +117,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     symbol: selectedSymbol,
                     exchange: selectedExchange,
                     timeframe: selectedTimeframe,
-                    optimizer: 'bayesian',
+                    optimizer: optimizer,
                     lookback_days: lookbackDays,
                     n_iterations: nIterations,
                     run_validation: false
@@ -281,6 +282,26 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                                 <option key={tf} value={tf}>{tf}</option>
                             ))}
                         </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                            Optimizer Algorithm
+                        </label>
+                        <select
+                            value={optimizer}
+                            onChange={(e) => setOptimizer(e.target.value)}
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                        >
+                            <option value="bayesian">Bayesian Optimization (Recommended)</option>
+                            <option value="random">Random Search</option>
+                            <option value="grid">Grid Search</option>
+                        </select>
+                        <p className="text-xs text-brand-text-secondary mt-1">
+                            {optimizer === 'bayesian' && 'Smart search using probability models - fastest convergence'}
+                            {optimizer === 'random' && 'Random parameter exploration - good for broad search'}
+                            {optimizer === 'grid' && 'Exhaustive search - most thorough but slowest'}
+                        </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
