@@ -460,7 +460,7 @@ class ConfigurationWriter:
         Schema has 70+ columns including lifecycle, regime, execution metrics, etc.
         """
         try:
-            db_url = self.get_db_url()
+            db_url = self._get_db_url()
             conn = await asyncpg.connect(db_url)
             
             # Extract and convert values
