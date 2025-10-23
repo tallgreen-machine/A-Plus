@@ -170,17 +170,22 @@ class DataCollector:
         
         Schema:
             market_data (
-                id SERIAL,
-                symbol TEXT,
-                exchange TEXT,
-                timeframe TEXT,
-                timestamp BIGINT,  -- Unix ms
-                open NUMERIC,
-                high NUMERIC,
-                low NUMERIC,
-                close NUMERIC,
-                volume NUMERIC
+                id BIGSERIAL PRIMARY KEY,
+                exchange VARCHAR(50) NOT NULL,
+                symbol VARCHAR(20) NOT NULL,
+                timeframe VARCHAR(10) NOT NULL,
+                timestamp BIGINT NOT NULL,  -- Unix ms
+                open NUMERIC(20,8) NOT NULL,
+                high NUMERIC(20,8) NOT NULL,
+                low NUMERIC(20,8) NOT NULL,
+                close NUMERIC(20,8) NOT NULL,
+                volume NUMERIC(20,8) NOT NULL,
+                quote_volume NUMERIC(20,8),
+                trade_count INTEGER,
+                created_at TIMESTAMPTZ DEFAULT NOW()
             )
+        
+        Data coverage: 6 timeframes (1m, 5m, 15m, 1h, 4h, 1d), 1000 candles per symbol/timeframe
         """
         start_ts = int(start_date.timestamp() * 1000)
         end_ts = int(end_date.timestamp() * 1000)

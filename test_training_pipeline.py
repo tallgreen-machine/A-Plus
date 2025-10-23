@@ -42,7 +42,8 @@ async def test_end_to_end():
     """
     Run complete training pipeline test.
     
-    Target: Train LIQUIDITY SWEEP for BTC/USDT on Binance 5m
+    Target: Train LIQUIDITY SWEEP for BTC/USDT on Kraken 5m
+    Uses existing database data (no API calls)
     Expected time: < 5 minutes
     """
     print("=" * 80)
@@ -50,15 +51,15 @@ async def test_end_to_end():
     print("=" * 80)
     print()
     
-    # Configuration
+    # Configuration - Use binanceus which has 1000 candles per symbol/timeframe
     SYMBOL = 'BTC/USDT'
-    EXCHANGE = 'binance'
+    EXCHANGE = 'binanceus'
     TIMEFRAME = '5m'
-    LOOKBACK_DAYS = 90
+    LOOKBACK_DAYS = 90  # Will use whatever is available in DB
     N_CALLS = 50  # Small number for quick test (use 200 for production)
     
     print(f"Target: {SYMBOL} on {EXCHANGE} {TIMEFRAME}")
-    print(f"Lookback: {LOOKBACK_DAYS} days")
+    print(f"Lookback: {LOOKBACK_DAYS} days (database-only, no API calls)")
     print(f"Optimizer: {'Bayesian (ML)' if is_bayesian_available() else 'Random Search'}")
     print(f"Evaluations: {N_CALLS}")
     print()
@@ -68,7 +69,17 @@ async def test_end_to_end():
         print("Step 1: Collecting data...")
         print("-" * 80)
         
-        collector = DataCollector()
+        # Use production database connection
+        import os
+        db_url = (
+            f"postgresql://{os.getenv('DB_USER', 'traduser')}:"
+            f"{os.getenv('DB_PASSWORD', 'TRAD123!')}@"
+            f"{os.getenv('DB_HOST', 'localhost')}:"
+            f"{os.getenv('DB_PORT', '5432')}/"
+            f"{os.getenv('DB_NAME', 'trad')}"
+        )
+        
+        collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=SYMBOL,
             exchange=EXCHANGE,
