@@ -12,352 +12,394 @@ interface StrategyStudioProps {
 interface LogEntry {
     timestamp: string;
     content: string;
-    result?: TrainedConfiguration | null;
+    level: 'info' | 'success' | 'error' | 'progress';
 }
 
+interface TrainingJob {
+    job_id: string;
+    status: string;
+    strategy: string;
+    symbol: string;
+    exchange: string;
+    timeframe: string;
+}
+
+interface TrainingProgress {
+    job_id: string;
+    percentage: number;
+    current_step: string;
+    step_number: number;
+    total_steps: number;
+    step_percentage: number;
+    current_iteration?: number;
+    total_iterations?: number;
+    best_score?: number;
+    current_score?: number;
+    best_params?: Record<string, any>;
+    estimated_completion?: string;
+    is_complete: boolean;
+    error_message?: string;
+}
+
+// Hard-coded available strategies (will be dynamic later)
+const AVAILABLE_STRATEGIES = [
+    {
+        id: 'LIQUIDITY_SWEEP',
+        name: 'Liquidity Sweep',
+        description: 'Identifies and trades liquidity sweeps with volume confirmation'
+    }
+];
+
+const AVAILABLE_SYMBOLS = [
+    'BTC/USDT',
+    'ETH/USDT',
+    'SOL/USDT',
+    'ADA/USDT',
+    'AVAX/USDT',
+    'DOT/USDT',
+    'MATIC/USDT'
+];
+
+const AVAILABLE_EXCHANGES = ['binanceus'];
+const AVAILABLE_TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
+
+const API_BASE = 'http://138.68.245.159:8000';
+
 export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onTrainingComplete }) => {
-    const [strategies, setStrategies] = useState<Strategy[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
-    const [formData, setFormData] = useState({ name: '', prompt: '' });
-    const [isSaving, setIsSaving] = useState(false);
-    const [error, setError] = useState('');
+    // Strategy selection
+    const [selectedStrategies, setSelectedStrategies] = useState<string[]>(['LIQUIDITY_SWEEP']);
+    
+    // Training config
+    const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
+    const [selectedExchange] = useState<string>('binanceus');
+    const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
+    const [lookbackDays, setLookbackDays] = useState<number>(30);
+    const [nIterations, setNIterations] = useState<number>(20);
+    
+    // Training state
     const [isTraining, setIsTraining] = useState(false);
-    const [selectedPair, setSelectedPair] = useState<string>('');
-    const [tradingPairs] = useState(api.mockTrainedAssetsList);
+    const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [trainingLog, setTrainingLog] = useState<LogEntry[]>([]);
     const logContainerRef = useRef<HTMLDivElement>(null);
 
-
-    const fetchStrategies = useCallback(async () => {
-        setLoading(true);
-        const data = await api.getStrategies(currentUser);
-        setStrategies(data);
-        if (data.length > 0 && !selectedStrategyId) {
-            // setSelectedStrategyId(data[0].id);
-        }
-        setLoading(false);
-    }, [currentUser, selectedStrategyId]);
-
-    useEffect(() => {
-        fetchStrategies();
-    }, [fetchStrategies]);
-    
-    useEffect(() => {
-        if (selectedStrategyId) {
-            const selected = strategies.find(s => s.id === selectedStrategyId);
-            if (selected) {
-                setFormData({ name: selected.name, prompt: selected.prompt });
-            }
-        } else {
-            setFormData({ name: '', prompt: '' });
-        }
-        setError('');
-    }, [selectedStrategyId, strategies]);
-
+    // Auto-scroll log to bottom
     useEffect(() => {
         if (logContainerRef.current) {
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
     }, [trainingLog]);
 
-    const handleSelectStrategy = (id: string) => {
-        setSelectedStrategyId(id);
-    };
-
-    const handleCreateNew = () => {
-        setSelectedStrategyId(null);
-    };
-
-    const handleDelete = async () => {
-        if (selectedStrategyId && window.confirm('Are you sure you want to delete this strategy? This cannot be undone.')) {
-            await api.deleteStrategy(currentUser, selectedStrategyId);
-            setSelectedStrategyId(null);
-            await fetchStrategies();
-        }
-    };
-    
-    const handleSave = async (e: FormEvent) => {
-        e.preventDefault();
-        setError('');
-        if (!formData.name || !formData.prompt) {
-            setError('Both name and prompt are required.');
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            const savedStrategy = await api.saveStrategy(currentUser, { ...formData, id: selectedStrategyId ?? undefined });
-            await fetchStrategies();
-            setSelectedStrategyId(savedStrategy.id);
-        } catch (err) {
-            setError('Failed to save strategy. Please try again.');
-        } finally {
-            setIsSaving(false);
-        }
+    const addLog = (content: string, level: LogEntry['level'] = 'info') => {
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setTrainingLog(prev => [...prev, { timestamp, content, level }]);
     };
 
     const handleTrain = async () => {
-        if (!selectedPair) return;
+        if (selectedStrategies.length === 0) {
+            addLog('Please select at least one strategy', 'error');
+            return;
+        }
 
-        const addLog = (content: string, result: TrainedConfiguration | null = null) => {
-            const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-            setTrainingLog(prev => [...prev, { timestamp, content, result }]);
-        };
-        
         setTrainingLog([]);
         setIsTraining(true);
-        
+        setCurrentJob(null);
+
         try {
-            addLog(`Initiating training for ${selectedPair}...`);
-            await new Promise(res => setTimeout(res, 500));
-            addLog(`Analyzing ${strategies.length} selected strategies.`);
-            await new Promise(res => setTimeout(res, 800));
-            addLog(`Backtesting against multiple exchanges and timeframes...`);
-            addLog(`-------------------------------------------------------------------------------------`);
-            addLog(`STATUS     | EXCHANGE | TF   | GROSS WR | NET PROFIT | TRADES`);
-            addLog(`-------------------------------------------------------------------------------------`);
+            addLog(`Starting training for ${selectedSymbol} on ${selectedExchange} (${selectedTimeframe})`, 'info');
             
-            const handleTrainingProgress = (result: TrainedConfiguration) => {
-                const isProfitable = result.performance.net_profit > 0;
-                const status = isProfitable ? '✔ VIABLE' : '❌ REJECTED';
-                const logLine = `${status.padEnd(10)} | ${result.exchange.padEnd(8)} | ${result.timeframe.padEnd(4)} | ${result.performance.gross_win_rate.toFixed(1).padStart(7)}% | ${result.performance.net_profit.toFixed(2).padStart(9)}% | ${result.performance.sample_size}`;
-                addLog(logLine, result);
-            };
-            
-            const results = await api.runTrainingSimulation(selectedPair, strategies, handleTrainingProgress);
-            
-            addLog(`-------------------------------------------------------------------------------------`);
-            await new Promise(res => setTimeout(res, 500));
-            
-            addLog(`✔ Simulation complete. Passing all ${results.length} configurations to results page.`);
+            // Start training job
+            const response = await fetch(`${API_BASE}/api/v2/training/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    strategy: selectedStrategies[0], // First selected strategy
+                    symbol: selectedSymbol,
+                    exchange: selectedExchange,
+                    timeframe: selectedTimeframe,
+                    optimizer: 'bayesian',
+                    lookback_days: lookbackDays,
+                    n_iterations: nIterations,
+                    run_validation: false
+                })
+            });
 
-            await new Promise(res => setTimeout(res, 1000));
-            addLog(`Navigating to results page...`);
-            onTrainingComplete(results);
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to start training');
+            }
 
-        } catch(err) {
-            console.error("Training simulation failed", err);
-            addLog(`❌ Error during training simulation.`);
-        // FIX: Ensure isTraining state is reset regardless of success or failure.
-        } finally {
+            const job: TrainingJob = await response.json();
+            setCurrentJob(job);
+            addLog(`✓ Training job started: ${job.job_id}`, 'success');
+            addLog(`Monitoring progress...`, 'info');
+
+            // Poll progress every 2 seconds
+            const pollInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`${API_BASE}/api/v2/training/jobs/${job.job_id}/progress`);
+                    if (!progressResponse.ok) return;
+
+                    const progress: TrainingProgress = await progressResponse.json();
+
+                    // Build progress log message
+                    const pct = progress.percentage.toFixed(1);
+                    let progressLine = `[${pct}%] Step ${progress.step_number}/4: ${progress.current_step}`;
+                    
+                    if (progress.current_iteration && progress.total_iterations) {
+                        progressLine += ` | Iteration ${progress.current_iteration}/${progress.total_iterations}`;
+                    }
+                    
+                    if (progress.best_score !== undefined && progress.best_score !== null) {
+                        progressLine += ` | Best Score: ${progress.best_score.toFixed(4)}`;
+                    }
+
+                    addLog(progressLine, 'progress');
+
+                    // Check completion
+                    if (progress.is_complete) {
+                        clearInterval(pollInterval);
+                        
+                        if (progress.error_message) {
+                            addLog(`✗ Training failed: ${progress.error_message}`, 'error');
+                        } else {
+                            addLog(`✓ Training complete! Best score: ${progress.best_score?.toFixed(4)}`, 'success');
+                            
+                            // Fetch results
+                            const resultsResponse = await fetch(`${API_BASE}/api/v2/training/jobs/${job.job_id}/results`);
+                            if (resultsResponse.ok) {
+                                const results = await resultsResponse.json();
+                                addLog(`Configuration saved with ID: ${results.config_id}`, 'success');
+                                addLog(`View trained asset on the Trained Assets page`, 'info');
+                            }
+                        }
+                        
+                        setIsTraining(false);
+                    }
+                } catch (error) {
+                    console.error('Error polling progress:', error);
+                }
+            }, 2000);
+
+        } catch (error) {
+            addLog(`✗ Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
             setIsTraining(false);
         }
     };
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+    const toggleStrategy = (strategyId: string) => {
+        setSelectedStrategies(prev =>
+            prev.includes(strategyId)
+                ? prev.filter(id => id !== strategyId)
+                : [...prev, strategyId]
+        );
     };
     
-    const renderSidebar = () => {
-        if (loading) {
-            return (
-                <div className="space-y-2 p-4">
-                    {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
-                </div>
-            )
-        }
-        
+    };
+    
+    const renderStrategySidebar = () => {
         return (
-             <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full">
                 <div className="p-4 border-b border-brand-border shrink-0">
-                    <button
-                        onClick={handleCreateNew}
-                        className="w-full flex items-center justify-center gap-2 bg-brand-surface border border-brand-border text-brand-text-primary font-semibold px-3 py-2 rounded-lg hover:bg-brand-border transition-colors"
-                    >
-                        <PlusIcon className="w-4 h-4" />
-                        <span>New Strategy</span>
-                    </button>
+                    <h3 className="text-lg font-bold text-brand-text-primary mb-1">Available Strategies</h3>
+                    <p className="text-xs text-brand-text-secondary">Select strategies to train</p>
                 </div>
-                <nav className="flex-1 overflow-y-auto p-2">
-                    {strategies.map(strat => (
-                        <button
-                            key={strat.id}
-                            onClick={() => handleSelectStrategy(strat.id)}
-                            className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                                selectedStrategyId === strat.id
-                                    ? 'bg-brand-primary/20 text-brand-primary'
-                                    : 'text-brand-text-primary hover:bg-brand-surface'
-                            }`}
-                        >
-                            {strat.name}
-                        </button>
-                    ))}
+                <nav className="flex-1 overflow-y-auto p-2 space-y-2">
+                    {AVAILABLE_STRATEGIES.map(strategy => {
+                        const isSelected = selectedStrategies.includes(strategy.id);
+                        return (
+                            <button
+                                key={strategy.id}
+                                onClick={() => toggleStrategy(strategy.id)}
+                                className={`w-full text-left px-3 py-3 rounded-md text-sm transition-colors border-2 ${
+                                    isSelected
+                                        ? 'bg-brand-primary/20 border-brand-primary text-brand-primary'
+                                        : 'border-brand-border text-brand-text-primary hover:bg-brand-surface'
+                                }`}
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                        <div className="font-semibold">{strategy.name}</div>
+                                        <div className="text-xs text-brand-text-secondary mt-1">{strategy.description}</div>
+                                    </div>
+                                    {isSelected && (
+                                        <div className="ml-2 text-brand-primary">✓</div>
+                                    )}
+                                </div>
+                            </button>
+                        );
+                    })}
                 </nav>
             </div>
-        )
+        );
     };
 
-    const renderViewport = () => {
-        if (!selectedStrategyId && strategies.length > 0) {
-             return (
-                <div className="flex items-center justify-center h-full">
-                    <div className="text-center text-brand-text-secondary">
-                        <p className="font-semibold">Select a strategy to view or edit</p>
-                        <p className="text-sm mt-1">Or create a new one to get started.</p>
-                    </div>
-                </div>
-            );
-        }
-        
+    const renderConfigPanel = () => {
         return (
-             <form onSubmit={handleSave} className="flex flex-col h-full p-6 space-y-4">
-                 <h2 className="text-2xl font-bold text-brand-text-primary">
-                    {selectedStrategyId ? 'Edit Strategy' : 'Create New Strategy'}
-                </h2>
-                <div>
-                    <label htmlFor="name" className="block text-sm font-medium text-brand-text-secondary mb-1">
-                        Strategy Name
-                    </label>
-                    <input
-                        type="text"
-                        id="name"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleChange}
-                        placeholder="e.g., Conservative Trend Follower"
-                        className="block w-full bg-brand-bg border border-brand-border rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-brand-primary focus:border-brand-primary sm:text-sm"
-                    />
-                </div>
-                <div className="flex-1 flex flex-col">
-                    <label htmlFor="prompt" className="block text-sm font-medium text-brand-text-secondary mb-1">
-                        Strategy Prompt
-                    </label>
-                    <textarea
-                        id="prompt"
-                        name="prompt"
-                        value={formData.prompt}
-                        onChange={handleChange}
-                        placeholder="Enter the detailed instructions for the AI trainer..."
-                        className="flex-1 block w-full bg-brand-bg border border-brand-border rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-brand-primary focus:border-brand-primary sm:text-sm font-mono resize-none"
-                    />
-                </div>
+            <div className="flex flex-col h-full p-6 space-y-4">
+                <h2 className="text-2xl font-bold text-brand-text-primary">Training Configuration</h2>
                 
-                 {error && <p className="text-sm text-brand-negative">{error}</p>}
-
-                <div className="pt-2 flex justify-between items-center">
-                     <div>
-                        {selectedStrategyId && (
-                            <button
-                                type="button"
-                                onClick={handleDelete}
-                                disabled={isSaving}
-                                className="flex items-center justify-center gap-2 text-sm bg-brand-negative/10 text-brand-negative font-semibold px-4 py-2 rounded-md hover:bg-brand-negative/20 transition-colors disabled:opacity-50"
-                            >
-                                <TrashIcon className="w-4 h-4" />
-                                <span>Delete</span>
-                            </button>
-                        )}
-                    </div>
-                    <button
-                        type="submit"
-                        disabled={isSaving}
-                        className="flex items-center justify-center gap-2 bg-brand-primary text-white font-semibold px-6 py-2 rounded-lg hover:bg-brand-primary/80 transition-colors disabled:bg-brand-border disabled:text-brand-text-secondary disabled:cursor-not-allowed"
-                    >
-                        {isSaving ? (
-                            <>
-                                <SparklesIcon className="w-4 h-4 animate-pulse" />
-                                <span>Saving...</span>
-                            </>
-                        ) : (
-                            <span>Save Changes</span>
-                        )}
-                    </button>
-                </div>
-             </form>
-        )
-    };
-
-     const renderTrainingSidebar = () => {
-        return (
-            <div className="flex flex-col h-full bg-brand-surface/50">
-                <div className="p-4 border-b border-brand-border shrink-0 space-y-4">
-                     <h3 className="text-lg font-bold text-brand-text-primary">Simulation & Training</h3>
-                     <div className="space-y-2">
-                         <label htmlFor="trading-pair" className="block text-sm font-medium text-brand-text-secondary">
-                            1. Select Trading Pair
-                         </label>
-                         <select
-                            id="trading-pair"
-                            value={selectedPair}
-                            onChange={(e) => setSelectedPair(e.target.value)}
-                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm placeholder-brand-text-secondary focus:ring-1 focus:ring-brand-primary focus:border-brand-primary transition-all"
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                            Symbol
+                        </label>
+                        <select
+                            value={selectedSymbol}
+                            onChange={(e) => setSelectedSymbol(e.target.value)}
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
                         >
-                            <option value="">Select Trading Pair...</option>
-                            {tradingPairs.map(pair => (
-                                <option key={pair} value={pair}>{pair}</option>
+                            {AVAILABLE_SYMBOLS.map(symbol => (
+                                <option key={symbol} value={symbol}>{symbol}</option>
                             ))}
                         </select>
-                     </div>
-                     <button
-                        onClick={handleTrain}
-                        disabled={!selectedPair || isTraining || strategies.length === 0}
-                        className="w-full flex items-center justify-center gap-2 bg-brand-primary text-white font-semibold px-4 py-2 rounded-lg hover:bg-brand-primary/80 transition-colors disabled:bg-brand-border disabled:text-brand-text-secondary disabled:cursor-not-allowed"
-                    >
-                        {isTraining ? (
-                            <>
-                                <SparklesIcon className="w-4 h-4 animate-spin" />
-                                <span>Training...</span>
-                            </>
-                        ) : (
-                            <>
-                                <RocketIcon className="w-4 h-4" />
-                                <span>Train with all {strategies.length} Strategies</span>
-                            </>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                            Exchange
+                        </label>
+                        <select
+                            value={selectedExchange}
+                            disabled
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm opacity-60 cursor-not-allowed"
+                        >
+                            {AVAILABLE_EXCHANGES.map(exchange => (
+                                <option key={exchange} value={exchange}>{exchange}</option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-brand-text-secondary mt-1">Currently only binanceus is supported</p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                            Timeframe
+                        </label>
+                        <select
+                            value={selectedTimeframe}
+                            onChange={(e) => setSelectedTimeframe(e.target.value)}
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                        >
+                            {AVAILABLE_TIMEFRAMES.map(tf => (
+                                <option key={tf} value={tf}>{tf}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                                Lookback Days
+                            </label>
+                            <input
+                                type="number"
+                                value={lookbackDays}
+                                onChange={(e) => setLookbackDays(Number(e.target.value))}
+                                min="7"
+                                max="365"
+                                className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                            />
+                            <p className="text-xs text-brand-text-secondary mt-1">Historical data window</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                                Iterations
+                            </label>
+                            <input
+                                type="number"
+                                value={nIterations}
+                                onChange={(e) => setNIterations(Number(e.target.value))}
+                                min="10"
+                                max="200"
+                                className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                            />
+                            <p className="text-xs text-brand-text-secondary mt-1">Optimization attempts</p>
+                        </div>
+                    </div>
+
+                    <div className="pt-4 border-t border-brand-border">
+                        <button
+                            onClick={handleTrain}
+                            disabled={isTraining || selectedStrategies.length === 0}
+                            className="w-full flex items-center justify-center gap-2 bg-brand-primary text-white font-semibold px-4 py-3 rounded-lg hover:bg-brand-primary/80 transition-colors disabled:bg-brand-border disabled:text-brand-text-secondary disabled:cursor-not-allowed"
+                        >
+                            {isTraining ? (
+                                <>
+                                    <SparklesIcon className="w-5 h-5 animate-spin" />
+                                    <span>Training in Progress...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <RocketIcon className="w-5 h-5" />
+                                    <span>Start Training</span>
+                                </>
+                            )}
+                        </button>
+                        {selectedStrategies.length === 0 && (
+                            <p className="text-xs text-brand-negative mt-2 text-center">
+                                Please select at least one strategy from the left panel
+                            </p>
                         )}
-                    </button>
+                    </div>
                 </div>
+            </div>
+        );
+    };
+
+    const renderTrainingSidebar = () => {
+        return (
+            <div className="flex flex-col h-full bg-brand-surface/50">
+                <div className="p-4 border-b border-brand-border shrink-0">
+                    <h3 className="text-lg font-bold text-brand-text-primary">Training Log</h3>
+                    <p className="text-xs text-brand-text-secondary mt-1">Real-time training progress</p>
+                </div>
+                
                 <div className="flex-1 flex flex-col p-4 min-h-0">
-                     <h4 className="text-md font-semibold text-brand-text-primary mb-2 shrink-0">Training Log</h4>
-                     <div ref={logContainerRef} className="flex-1 overflow-y-auto bg-black/20 p-2 rounded-md">
+                    <div ref={logContainerRef} className="flex-1 overflow-y-auto bg-black/20 p-3 rounded-md">
                         {trainingLog.length > 0 ? (
-                            <pre className="text-xs whitespace-pre-wrap font-mono space-y-1.5">
+                            <pre className="text-xs whitespace-pre-wrap font-mono space-y-1">
                                 {trainingLog.map((log, index) => {
                                     let colorClass = 'text-brand-text-secondary';
-                                    if (log.result) {
-                                        colorClass = log.result.performance.net_profit > 0 ? 'text-green-400' : 'text-red-400';
-                                    } else if (log.content.includes('✔')) {
-                                        colorClass = 'text-green-400';
-                                    } else if (log.content.includes('❌')) {
-                                        colorClass = 'text-red-400';
-                                    }
+                                    if (log.level === 'success') colorClass = 'text-green-400';
+                                    else if (log.level === 'error') colorClass = 'text-red-400';
+                                    else if (log.level === 'progress') colorClass = 'text-blue-400';
 
                                     return (
                                         <div key={index}>
-                                            <span className="text-gray-500">{`[${log.timestamp}] `}</span>
+                                            <span className="text-gray-500">[{log.timestamp}] </span>
                                             <span className={colorClass}>{log.content}</span>
                                         </div>
-                                    )
+                                    );
                                 })}
                             </pre>
                         ) : (
                             <div className="flex items-center justify-center h-full text-center text-sm text-brand-text-secondary/50 p-4">
-                                Logs will appear here when training starts.
+                                Training logs will appear here when you start training
                             </div>
                         )}
-                     </div>
+                    </div>
                 </div>
             </div>
         );
-    }
+    };
     
     return (
         <div className="h-full flex flex-col">
             <header className="p-4 lg:p-6 border-b border-brand-border shrink-0">
                 <div>
                     <h1 className="text-3xl font-bold text-brand-text-primary">Strategy Studio</h1>
-                    <p className="text-brand-text-secondary mt-1">Create and manage custom prompts to guide the AI Trainer.</p>
+                    <p className="text-brand-text-secondary mt-1">
+                        Train strategies with machine learning optimization
+                    </p>
                 </div>
             </header>
-            <main className="flex-1 grid grid-cols-[320px_1fr_400px] overflow-hidden">
+            <main className="flex-1 grid grid-cols-[280px_1fr_380px] overflow-hidden">
                 <aside className="bg-brand-surface/50 border-r border-brand-border overflow-hidden">
-                    {renderSidebar()}
+                    {renderStrategySidebar()}
                 </aside>
                 <div className="bg-brand-surface overflow-y-auto">
-                    {renderViewport()}
+                    {renderConfigPanel()}
                 </div>
-                 <aside className="border-l border-brand-border overflow-hidden">
+                <aside className="border-l border-brand-border overflow-hidden">
                     {renderTrainingSidebar()}
                 </aside>
             </main>

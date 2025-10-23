@@ -198,7 +198,7 @@ async def run_training_task(
         # ===== Step 2: Optimization =====
         await progress.start('optimization', {
             'optimizer': request.optimizer,
-            'n_calls': request.n_calls
+            'n_iterations': request.n_iterations
         })
         
         log.info(f"[{job_id}] Step 2/4: Defining parameter space...")
