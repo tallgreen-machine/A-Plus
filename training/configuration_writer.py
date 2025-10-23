@@ -20,11 +20,27 @@ from typing import Dict, Any, Optional, List
 import logging
 import asyncpg
 import hashlib
+import numpy as np
 
 from .backtest_engine import BacktestResult
 from .validator import ValidationResult
 
 log = logging.getLogger(__name__)
+
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    return obj
 
 
 class ConfigurationWriter:
@@ -497,15 +513,15 @@ class ConfigurationWriter:
                 config_json['context']['timeframe'],
                 lifecycle_stage,
                 config_json['lifecycle']['confidence_score'],
-                json.dumps(config_json['parameters']),
-                json.dumps(config_json['performance']),
-                json.dumps(config_json),
+                json.dumps(convert_numpy_types(config_json['parameters'])),
+                json.dumps(convert_numpy_types(config_json['performance'])),
+                json.dumps(convert_numpy_types(config_json)),
                 datetime.now(timezone.utc),
                 datetime.now(timezone.utc),
-                config_json['statistical_validation']['sharpe_ratio'],
-                config_json['performance']['NET_PROFIT'],
-                config_json['performance']['sample_size'],
-                config_json['performance']['gross_WR']
+                float(config_json['statistical_validation']['sharpe_ratio']),
+                float(config_json['performance']['NET_PROFIT']),
+                int(config_json['performance']['sample_size']),
+                float(config_json['performance']['gross_WR'])
             )
             
             await conn.close()
