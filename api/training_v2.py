@@ -109,10 +109,23 @@ class TrainingResultsResponse(BaseModel):
 
 def get_db_url() -> str:
     """Get database URL from config."""
+    # Try DATABASE_URL first (standard)
     db_url = os.getenv('DATABASE_URL')
     if db_url:
         return db_url
     
+    # Try individual DB_* environment variables (trad.env format)
+    db_host = os.getenv('DB_HOST')
+    if db_host:
+        return (
+            f"postgresql://{os.getenv('DB_USER', 'traduser')}:"
+            f"{os.getenv('DB_PASSWORD', '')}@"
+            f"{db_host}:"
+            f"{os.getenv('DB_PORT', '5432')}/"
+            f"{os.getenv('DB_NAME', 'trad')}"
+        )
+    
+    # Fallback to config.ini
     config = ConfigParser()
     config.read('config.ini')
     
