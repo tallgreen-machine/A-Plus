@@ -17,6 +17,7 @@ from api.portfolio import router as portfolio_router
 from api.trades import router as trades_router
 from api.strategies_api import router as strategies_router
 from api.training import router as training_router
+from api.training_v2 import router as training_v2_router  # V2 Training System
 from api.training_configurations import router as training_configs_router
 from api.exchanges import router as exchanges_router
 from api.analytics import router as analytics_router
@@ -52,6 +53,7 @@ app.include_router(portfolio_router, tags=["Portfolio"])
 app.include_router(trades_router, tags=["Trades"])
 app.include_router(strategies_router, tags=["Strategies"])
 app.include_router(training_router, tags=["Training"])
+app.include_router(training_v2_router, tags=["Training V2"])  # V2 Training System
 app.include_router(training_configs_router, tags=["Training Configurations"])
 app.include_router(exchanges_router, tags=["Exchanges"])
 app.include_router(analytics_router, tags=["Analytics"])
