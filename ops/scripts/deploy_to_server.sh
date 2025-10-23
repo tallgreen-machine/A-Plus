@@ -87,7 +87,6 @@ sudo apt-get install -y python3-venv postgresql-client
 # Create venv for main bot
 python3 -m venv "${DEST}/.venv"
 "${DEST}/.venv/bin/pip" install -r "${DEST}/requirements.txt"
-"${DEST}/.venv/bin/pip" install -r "${DEST}/policy/requirements.txt"
 EOF
 
 echo "[deploy] checking postgres authentication config"
