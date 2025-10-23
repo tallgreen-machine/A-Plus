@@ -2,6 +2,8 @@
 
 **Precision-first trading system combining A-Plus financial strategies with ML parameter optimization for maximum confluence and minimal noise.**
 
+> **V2 Dashboard Now Live!** Complete terminology refactor: Strategy→Configuration→Variable→Parameter hierarchy. Real database integration with `trained_configurations` table. See [GLOSSARY.md](./GLOSSARY.md) for terminology reference.
+
 ## 🎯 Core Philosophy: "Patience and Precision"
 
 **Quality over quantity** - We only trade high-confluence setups where multiple A+ conditions align perfectly. Our ML system doesn't generate signals; it optimizes the A+ strategy parameters for each asset to maximize precision.
@@ -118,11 +120,111 @@ if strategy.check_confluence(market_data, **ml_params):
     └── components/      # UI components
 ```
 
-## 🎮 TradePulse IQ Dashboard
+## 🎮 TradePulse IQ Dashboard (V2)
 
-**Real-time trading dashboard with full backend integration:**
+**Next-generation React dashboard with real database integration and proper terminology.**
+
+### V2 Major Changes ✨
+- **Terminology Refactor**: Pattern→Strategy, TrainedAssets→TrainedConfigurations (see [GLOSSARY.md](./GLOSSARY.md))
+- **Real Database Integration**: `trained_configurations` table with 70 columns, 10 indexes
+- **Service Layer**: `tradepulse-v2/services/realApi.ts` connects to FastAPI backend (not mock data)
+- **Enhanced API**: 5 new endpoints in `api/training_configurations.py` for configuration CRUD
+- **Schema Version**: 1.1.0 with auto-updating triggers
+
+### Terminology Hierarchy
+```
+Strategy (LIQUIDITY_SWEEP_V3, HTF_SWEEP, VOLUME_BREAKOUT, DIVERGENCE_CAPITULATION)
+  ↓
+Configuration (Strategy + Exchange + Pair + Timeframe + Regime + Variables)
+  ↓
+Variable (pierce_depth, rejection_candles, volume_spike_threshold)
+  ↓
+Parameter (specific values: 0.18, 3, 2.8)
+```
 
 ### Key Features
+- **Live Portfolio Monitoring**: Real-time equity, holdings, P&L tracking
+- **Strategy Performance**: Multi-dimensional strategy analytics per configuration
+- **Trained Configurations**: Browse 13+ pre-trained configurations from database
+- **Configuration Management**: Activate/deactivate configurations, view performance stats
+- **Trade Management**: View active trades, history, and execution logs  
+- **Risk Management**: Portfolio risk metrics and position sizing
+- **Exchange Settings**: Multi-exchange connection testing and monitoring
+- **Strategy Studio**: Placeholder for future AI-driven strategy creation
+
+### API Integration Status ✅
+- **Backend Connected**: `tradepulse-v2/services/realApi.ts` calls all 35+ API endpoints
+- **Real Database**: PostgreSQL with `trained_configurations` table (schema v1.1.0)
+- **Data Transformation**: Automatic snake_case ↔ camelCase conversion
+- **Type Safety**: Full TypeScript types matching backend Pydantic models
+
+### V2 Dashboard Architecture
+```
+tradepulse-v2/
+├── App.tsx                          # Main dashboard (uses realApi)
+├── services/
+│   ├── realApi.ts                   # Real backend integration (PRODUCTION)
+│   └── mockApi.ts                   # Mock data (deprecated, for reference only)
+├── components/
+│   ├── StrategyPerformanceTable.tsx # Renamed from PatternPerformanceTable
+│   ├── TrainedAssets.tsx           # Shows trained_configurations table
+│   ├── ExchangeSettings.tsx        # Exchange connection management
+│   └── StrategyStudio.tsx          # Future: AI strategy creation
+├── types.ts                        # TypeScript definitions (Strategy*, not Pattern*)
+├── vite.config.ts                  # Builds to ../api/static/
+└── .env                            # VITE_API_URL configuration
+
+Backend API (FastAPI):
+├── api/training_configurations.py  # NEW: 5 CRUD endpoints
+│   ├── GET    /api/training/configurations          # List with filters
+│   ├── GET    /api/training/configurations/{id}     # Get single config
+│   ├── POST   /api/training/configurations/{id}/activate
+│   ├── POST   /api/training/configurations/{id}/deactivate
+│   └── GET    /api/training/configurations/stats/summary
+├── api/portfolio.py                # Portfolio & performance
+├── api/trades.py                   # Trades & bot status
+├── api/strategies_api.py           # Strategy performance
+└── api/exchanges.py                # Exchange connections
+
+Database Schema v1.1.0:
+└── trained_configurations          # NEW: 70 columns, 10 indexes
+    ├── Core: id, strategy, exchange, pair, timeframe, status
+    ├── Performance: net_profit, sharpe_ratio, win_rate, max_drawdown
+    ├── Statistical: sample_size, confidence_interval, out_of_sample_sharpe
+    ├── Risk: max_position_size, correlation_threshold
+    ├── Lifecycle: activation_date, death_signals, time_in_state
+    └── Metadata: created_at, updated_at (auto-trigger)
+```
+
+### Development & Deployment
+```bash
+# Build V2 dashboard
+cd tradepulse-v2
+npm install
+npm run build  # Outputs to ../api/static/
+
+# Deploy to production (includes V2 build)
+SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
+
+# Access dashboard
+open http://138.68.245.159:8000  # Served by FastAPI from api/static/
+```
+
+### Breaking Changes from V1
+- ❌ `Pattern*` types removed → Use `Strategy*` types
+- ❌ `mockApi.ts` deprecated → Use `realApi.ts` only
+- ❌ `trained_assets` table → Migrated to `trained_configurations`
+- ✅ All frontend imports updated to `realApi`
+- ✅ Database migration 004 applied to production
+- ✅ 13 seed configurations loaded for testing
+
+---
+
+## 🎮 TradePulse IQ Dashboard (V1 - Deprecated)
+
+**Legacy dashboard information retained for reference.**
+
+### V1 Dashboard Features (Legacy)
 - **Live Portfolio Monitoring**: Real-time equity, holdings, P&L tracking
 - **Strategy Performance**: Multi-dimensional strategy analytics per asset
 - **AI Training Interface**: Start/monitor ML training sessions
@@ -130,11 +232,13 @@ if strategy.check_confluence(market_data, **ml_params):
 - **Risk Management**: Portfolio risk metrics and position sizing
 - **Exchange Management**: Multi-exchange connection testing and monitoring
 
-### API Integration Status ✅
+### V1 API Integration Status (Legacy)
 - **Backend Connected**: All 30+ API endpoints operational
 - **Real Database**: PostgreSQL with live portfolio and trade data
 - **Authentication**: JWT-based security (currently disabled for development)
 - **Real-time Updates**: Live market data integration ready
+
+---
 
 ## 🧠 ML Training System
 
