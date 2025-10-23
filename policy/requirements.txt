@@ -1,0 +1,15 @@
+# Policy-specific requirements (kept intentionally minimal for deployments)gymnasium
+
+# Add packages required by the policy subsystem here, if any.stable-baselines3
+
+torch
+
+pandas
+numpy
+psycopg2-binary
+ccxt
+python-dotenv
+tensorboard
+tqdm
+rich
+matplotlib
