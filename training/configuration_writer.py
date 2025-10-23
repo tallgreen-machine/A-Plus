@@ -456,77 +456,73 @@ class ConfigurationWriter:
         """
         Insert configuration to trained_configurations table.
         
-        Schema:
-            trained_configurations (
-                id SERIAL PRIMARY KEY,
-                config_id TEXT UNIQUE,
-                strategy TEXT,
-                symbol TEXT,
-                exchange TEXT,
-                timeframe TEXT,
-                lifecycle_stage TEXT,
-                confidence_score NUMERIC,
-                parameters JSONB,
-                metrics JSONB,
-                config_json JSONB,
-                created_at TIMESTAMP,
-                updated_at TIMESTAMP,
-                ... (70 columns total)
-            )
+        Maps V2 training results to comprehensive production schema.
+        Schema has 70+ columns including lifecycle, regime, execution metrics, etc.
         """
         try:
-            conn = await asyncpg.connect(self.db_url)
+            db_url = self.get_db_url()
+            conn = await asyncpg.connect(db_url)
             
-            # Extract fields for columns
+            # Extract and convert values
+            perf = config_json['performance']
+            stats = config_json['statistical_validation']
+            params = config_json['parameters']
+            
+            # Map to existing schema columns
             query = """
                 INSERT INTO trained_configurations (
-                    config_id,
-                    strategy,
-                    symbol,
+                    strategy_name,
                     exchange,
+                    pair,
                     timeframe,
-                    lifecycle_stage,
-                    confidence_score,
-                    parameters,
-                    metrics,
-                    config_json,
-                    created_at,
-                    updated_at,
+                    regime,
+                    status,
+                    is_active,
+                    parameters_json,
+                    gross_win_rate,
+                    avg_win,
+                    avg_loss,
+                    net_profit,
+                    sample_size,
                     sharpe_ratio,
-                    net_profit_pct,
-                    total_trades,
-                    gross_win_rate
+                    calmar_ratio,
+                    sortino_ratio,
+                    created_at,
+                    updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
                 )
-                ON CONFLICT (config_id) DO UPDATE SET
-                    updated_at = EXCLUDED.updated_at,
-                    config_json = EXCLUDED.config_json
+                RETURNING id
             """
             
-            await conn.execute(
+            # Use 'sideways' as default regime for now (regime detection not yet implemented)
+            regime = config_json.get('context', {}).get('regime', 'sideways')
+            
+            result = await conn.fetchval(
                 query,
-                config_json['configId'],
-                config_json['strategy'],
-                config_json['context']['pair'],
-                config_json['context']['exchange'],
-                config_json['context']['timeframe'],
-                lifecycle_stage,
-                config_json['lifecycle']['confidence_score'],
-                json.dumps(convert_numpy_types(config_json['parameters'])),
-                json.dumps(convert_numpy_types(config_json['performance'])),
-                json.dumps(convert_numpy_types(config_json)),
-                datetime.now(timezone.utc),
-                datetime.now(timezone.utc),
-                float(config_json['statistical_validation']['sharpe_ratio']),
-                float(config_json['performance']['NET_PROFIT']),
-                int(config_json['performance']['sample_size']),
-                float(config_json['performance']['gross_WR'])
+                config_json['strategy'],  # strategy_name
+                config_json['context']['exchange'],  # exchange
+                config_json['context']['pair'],  # pair
+                config_json['context']['timeframe'],  # timeframe
+                regime,  # regime
+                lifecycle_stage,  # status (maps to lifecycle_stage)
+                False,  # is_active (not yet activated)
+                json.dumps(convert_numpy_types(params)),  # parameters_json
+                float(perf.get('gross_WR', 0)) / 100.0,  # gross_win_rate (convert % to decimal)
+                float(perf.get('avg_win_pct', 0)),  # avg_win
+                float(perf.get('avg_loss_pct', 0)),  # avg_loss
+                float(perf.get('NET_PROFIT', 0)),  # net_profit
+                int(perf.get('sample_size', 0)),  # sample_size
+                float(stats.get('sharpe_ratio', 0)),  # sharpe_ratio
+                float(stats.get('calmar_ratio', 0)),  # calmar_ratio
+                float(stats.get('sortino_ratio', 0)),  # sortino_ratio
+                datetime.now(timezone.utc),  # created_at
+                datetime.now(timezone.utc)  # updated_at
             )
             
             await conn.close()
             
-            log.debug(f"Configuration inserted to database: {config_json['configId']}")
+            log.debug(f"Configuration inserted to database: ID={result}, {config_json['configId']}")
             
         except Exception as e:
             log.error(f"Database insert failed: {e}")
