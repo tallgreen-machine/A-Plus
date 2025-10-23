@@ -28,6 +28,7 @@ from training.optimizers.random_search import RandomSearchOptimizer
 from training.optimizers.bayesian import BayesianOptimizer, is_bayesian_available
 from training.validator import WalkForwardValidator
 from training.configuration_writer import ConfigurationWriter
+from training.progress_tracker import ProgressTracker
 
 # Database imports
 import asyncpg
@@ -140,6 +141,7 @@ async def run_training_task(
     Updates database with progress and results.
     """
     db_url = get_db_url()
+    progress = ProgressTracker(job_id=job_id, db_url=db_url)
     
     try:
         # Update status to RUNNING
@@ -158,7 +160,14 @@ async def run_training_task(
         log.info(f"Training job {job_id} started: {request.strategy} {request.symbol}")
         
         # ===== Step 1: Data Collection =====
-        log.info(f"[{job_id}] Step 1/5: Collecting data...")
+        await progress.start('data_collection', {
+            'symbol': request.symbol,
+            'exchange': request.exchange,
+            'timeframe': request.timeframe,
+            'lookback_days': request.lookback_days
+        })
+        
+        log.info(f"[{job_id}] Step 1/4: Collecting data...")
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=request.symbol,
@@ -167,16 +176,18 @@ async def run_training_task(
             lookback_days=request.lookback_days
         )
         
-        # Update progress
-        conn = await asyncpg.connect(db_url)
-        await conn.execute(
-            "UPDATE training_jobs SET progress_pct = 20 WHERE job_id = $1",
-            job_id
+        await progress.update(
+            step_percentage=100.0,
+            step_details={'candles': len(data)}
         )
-        await conn.close()
         
-        # ===== Step 2: Get Parameter Space =====
-        log.info(f"[{job_id}] Step 2/5: Defining parameter space...")
+        # ===== Step 2: Optimization =====
+        await progress.start('optimization', {
+            'optimizer': request.optimizer,
+            'n_calls': request.n_calls
+        })
+        
+        log.info(f"[{job_id}] Step 2/4: Defining parameter space...")
         
         # Map strategy name to class
         strategy_map = {
@@ -190,14 +201,33 @@ async def run_training_task(
         temp_strategy = strategy_class({})
         parameter_space = temp_strategy.get_parameter_space()
         
-        # ===== Step 3: Optimization =====
-        log.info(f"[{job_id}] Step 3/5: Running {request.optimizer} optimization...")
+        log.info(f"[{job_id}] Running {request.optimizer} optimization...")
         
         engine = BacktestEngine(
             initial_capital=10000,
             fee_rate=0.001,
             slippage_rate=0.0005
         )
+        
+        # Progress callback for optimizer
+        best_score_so_far = float('-inf')
+        best_params_so_far = None
+        
+        async def optimizer_callback(iteration: int, total: int, score: float, params: Dict[str, Any]):
+            nonlocal best_score_so_far, best_params_so_far
+            if score > best_score_so_far:
+                best_score_so_far = score
+                best_params_so_far = params
+            
+            step_pct = (iteration / total) * 100
+            await progress.update(
+                step_percentage=step_pct,
+                iteration=iteration,
+                total_iterations=total,
+                best_score=best_score_so_far,
+                current_score=score,
+                best_params=best_params_so_far
+            )
         
         # Select optimizer
         if request.optimizer == 'grid':
@@ -238,19 +268,19 @@ async def run_training_task(
         else:
             raise ValueError(f"Unknown optimizer: {request.optimizer}")
         
-        # Update progress
-        conn = await asyncpg.connect(db_url)
-        await conn.execute(
-            "UPDATE training_jobs SET progress_pct = 60 WHERE job_id = $1",
-            job_id
-        )
-        await conn.close()
+        await progress.update(step_percentage=100.0)
         
-        # ===== Step 4: Validation (Optional) =====
+        # ===== Step 3: Validation (Optional) =====
         validation_result = None
         
         if request.run_validation:
-            log.info(f"[{job_id}] Step 4/5: Walk-forward validation...")
+            await progress.start('validation', {
+                'train_window_days': 60,
+                'test_window_days': 30,
+                'gap_days': 7
+            })
+            
+            log.info(f"[{job_id}] Step 3/4: Walk-forward validation...")
             
             validator = WalkForwardValidator(
                 train_window_days=60,
@@ -264,17 +294,15 @@ async def run_training_task(
                 strategy_class=strategy_class,
                 backtest_engine=engine
             )
+            
+            await progress.update(step_percentage=100.0)
         
-        # Update progress
-        conn = await asyncpg.connect(db_url)
-        await conn.execute(
-            "UPDATE training_jobs SET progress_pct = 80 WHERE job_id = $1",
-            job_id
-        )
-        await conn.close()
+        # ===== Step 4: Save Configuration =====
+        await progress.start('save_config', {
+            'config_destination': 'trained_configurations'
+        })
         
-        # ===== Step 5: Save Configuration =====
-        log.info(f"[{job_id}] Step 5/5: Saving configuration...")
+        log.info(f"[{job_id}] Step 4/4: Saving configuration...")
         
         # Re-run backtest with best params for full metrics
         final_strategy = strategy_class(opt_result['best_parameters'])
@@ -296,6 +324,11 @@ async def run_training_task(
                 'n_iterations': request.n_iterations
             }
         )
+        
+        await progress.update(step_percentage=100.0)
+        
+        # ===== Mark training complete =====
+        await progress.complete()
         
         # ===== Update Job Status: COMPLETED =====
         completed_at = datetime.now(timezone.utc)
@@ -346,6 +379,12 @@ async def run_training_task(
         
     except Exception as e:
         log.error(f"Training job {job_id} failed: {e}", exc_info=True)
+        
+        # Mark progress as failed
+        try:
+            await progress.error(str(e))
+        except:
+            pass
         
         # Update status to FAILED
         try:
@@ -681,4 +720,132 @@ async def cancel_training_job(job_id: str):
         raise
     except Exception as e:
         log.error(f"Failed to cancel job: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/jobs/{job_id}/progress")
+async def get_training_progress(job_id: str):
+    """
+    Get real-time training progress for a job.
+    
+    Returns:
+        - percentage: Overall progress (0-100)
+        - current_step: Current workflow step name
+        - step_number: Current step number (1-4)
+        - step_percentage: Progress within current step (0-100)
+        - estimated_completion: ETA timestamp (if available)
+        - current_iteration: Current optimizer iteration (if in optimization)
+        - total_iterations: Total optimizer iterations
+        - best_score: Best score found so far
+        - current_score: Score of current iteration
+        - best_params: Best parameters found so far
+        - is_complete: Whether training is finished
+        - error_message: Error message (if failed)
+    
+    Example response:
+        {
+            "job_id": "abc123",
+            "percentage": 62.5,
+            "current_step": "Optimization",
+            "step_number": 2,
+            "total_steps": 4,
+            "step_percentage": 75.0,
+            "current_iteration": 38,
+            "total_iterations": 50,
+            "best_score": 1.85,
+            "current_score": 1.42,
+            "best_params": {"pierce_depth": 0.15, ...},
+            "estimated_completion": "2025-10-23T06:15:30Z",
+            "is_complete": false,
+            "started_at": "2025-10-23T06:00:00Z",
+            "updated_at": "2025-10-23T06:10:25Z"
+        }
+    """
+    try:
+        db_url = get_db_url()
+        conn = await asyncpg.connect(db_url)
+        
+        # Get latest progress record
+        row = await conn.fetchrow(
+            """
+            SELECT 
+                job_id,
+                percentage,
+                current_step,
+                step_number,
+                total_steps,
+                step_percentage,
+                step_details,
+                started_at,
+                updated_at,
+                estimated_completion,
+                current_iteration,
+                total_iterations,
+                best_score,
+                current_score,
+                best_params,
+                is_complete,
+                error_message
+            FROM training_progress
+            WHERE job_id = $1
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            job_id
+        )
+        
+        await conn.close()
+        
+        if not row:
+            # No progress yet - check if job exists
+            conn = await asyncpg.connect(db_url)
+            job_row = await conn.fetchrow(
+                "SELECT status, created_at FROM training_jobs WHERE job_id = $1",
+                job_id
+            )
+            await conn.close()
+            
+            if not job_row:
+                raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+            
+            # Job exists but no progress yet
+            return {
+                "job_id": job_id,
+                "percentage": 0.0,
+                "current_step": "Pending",
+                "step_number": 0,
+                "total_steps": 4,
+                "step_percentage": 0.0,
+                "is_complete": False,
+                "started_at": job_row['created_at'].isoformat() if job_row['created_at'] else None,
+                "updated_at": job_row['created_at'].isoformat() if job_row['created_at'] else None
+            }
+        
+        # Build response
+        response = {
+            "job_id": row['job_id'],
+            "percentage": float(row['percentage']) if row['percentage'] else 0.0,
+            "current_step": row['current_step'],
+            "step_number": row['step_number'],
+            "total_steps": row['total_steps'],
+            "step_percentage": float(row['step_percentage']) if row['step_percentage'] else 0.0,
+            "step_details": row['step_details'],
+            "started_at": row['started_at'].isoformat() if row['started_at'] else None,
+            "updated_at": row['updated_at'].isoformat() if row['updated_at'] else None,
+            "estimated_completion": row['estimated_completion'].isoformat() if row['estimated_completion'] else None,
+            "current_iteration": row['current_iteration'],
+            "total_iterations": row['total_iterations'],
+            "best_score": float(row['best_score']) if row['best_score'] else None,
+            "current_score": float(row['current_score']) if row['current_score'] else None,
+            "best_params": row['best_params'],
+            "is_complete": row['is_complete'],
+            "error_message": row['error_message']
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Failed to get progress: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
