@@ -166,7 +166,7 @@ async def run_training_task(
             SET status = 'RUNNING', started_at = $1, progress_pct = 0
             WHERE job_id = $2
             """,
-            datetime.now(timezone.utc),
+            datetime.utcnow(),
             job_id
         )
         await conn.close()
@@ -345,7 +345,7 @@ async def run_training_task(
         await progress.complete()
         
         # ===== Update Job Status: COMPLETED =====
-        completed_at = datetime.now(timezone.utc)
+        completed_at = datetime.utcnow()
         
         conn = await asyncpg.connect(db_url)
         
@@ -413,7 +413,7 @@ async def run_training_task(
                     error_trace = $3
                 WHERE job_id = $4
                 """,
-                datetime.now(timezone.utc),
+                datetime.utcnow(),
                 str(e),
                 traceback.format_exc(),
                 job_id
@@ -487,7 +487,7 @@ async def start_training(
             request.lookback_days,
             request.n_iterations,
             json.dumps({}),  # parameter_space as JSON string
-            datetime.now(timezone.utc)
+            datetime.now()  # Use naive datetime for timestamp without time zone
         )
         
         await conn.close()
@@ -508,7 +508,7 @@ async def start_training(
             progress_pct=0,
             current_iteration=None,
             total_iterations=request.n_iterations,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.utcnow(),
             started_at=None,
             completed_at=None,
             duration_seconds=None,
@@ -720,7 +720,7 @@ async def cancel_training_job(job_id: str):
             SET status = 'CANCELLED', completed_at = $1
             WHERE job_id = $2
             """,
-            datetime.now(timezone.utc),
+            datetime.utcnow(),
             job_id
         )
         
