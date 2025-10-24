@@ -52,14 +52,23 @@ class DataCollector:
         log.info("DataCollector initialized (database-first mode)")
     
     def _get_db_url(self) -> str:
-        """Get database URL from config."""
+        """Get database URL from environment variables or config."""
         import os
         from configparser import ConfigParser
         
-        # Try environment variable first
+        # Try DATABASE_URL first (full connection string)
         db_url = os.getenv('DATABASE_URL')
         if db_url:
             return db_url
+        
+        # Try DB_* environment variables (trad.env format)
+        db_host = os.getenv('DB_HOST')
+        if db_host:
+            db_user = os.getenv('DB_USER', 'traduser')
+            db_password = os.getenv('DB_PASSWORD', '')
+            db_port = os.getenv('DB_PORT', '5432')
+            db_name = os.getenv('DB_NAME', 'trad')
+            return f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
         
         # Fall back to config.ini
         config = ConfigParser()
@@ -72,11 +81,11 @@ class DataCollector:
                 f"{db_config.get('password', '')}@"
                 f"{db_config.get('host', 'localhost')}:"
                 f"{db_config.get('port', '5432')}/"
-                f"{db_config.get('database', 'traddb')}"
+                f"{db_config.get('database', 'trad')}"
             )
         
-        # Default
-        return "postgresql://traduser:tradpass@localhost:5432/traddb"
+        # Default (production values)
+        return "postgresql://traduser:TRAD123!@localhost:5432/trad"
     
     async def fetch_ohlcv(
         self,

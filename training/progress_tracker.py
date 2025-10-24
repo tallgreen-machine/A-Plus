@@ -37,6 +37,8 @@ class ProgressTracker:
         self.db_url = db_url
         self.current_step = None
         self.started_at = datetime.utcnow()
+        self.last_percentage = 0.0  # Track last known percentage for error handling
+        self.last_step_number = 0  # Track last step number for error handling
         
     async def start(self, step_name: str, step_details: Optional[Dict[str, Any]] = None):
         """Start tracking a new step."""
@@ -128,6 +130,9 @@ class ProgressTracker:
         logger.error(f"[{self.job_id}] Training failed: {error_message}")
         
         await self._publish_update(
+            percentage=self.last_percentage or 0.0,  # Use last known percentage or 0
+            step_number=self.last_step_number or 1,  # Use last known step or 1
+            step_percentage=0.0,  # Set to 0 for error state
             current_step='Failed',
             error_message=error_message,
             is_complete=True
@@ -201,6 +206,12 @@ class ProgressTracker:
                 error_message,
                 self.started_at
             )
+            
+            # Track last percentage and step_number for error handling
+            if percentage is not None:
+                self.last_percentage = percentage
+            if step_number is not None:
+                self.last_step_number = step_number
             
             await conn.close()
             

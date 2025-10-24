@@ -117,6 +117,7 @@ class ConfigurationWriter:
         symbol: str,
         exchange: str,
         timeframe: str,
+        regime: str,
         parameters: Dict[str, Any],
         backtest_result: BacktestResult,
         validation_result: Optional[ValidationResult] = None,
@@ -131,6 +132,7 @@ class ConfigurationWriter:
             symbol: Trading pair (e.g., 'BTC/USDT')
             exchange: Exchange name (e.g., 'binance')
             timeframe: Timeframe (e.g., '5m')
+            regime: Market regime (e.g., 'bull', 'bear', 'sideways')
             parameters: Strategy parameters dict
             backtest_result: BacktestResult from training
             validation_result: Optional ValidationResult from walk-forward
@@ -140,7 +142,7 @@ class ConfigurationWriter:
         Returns:
             config_id: Generated configuration ID
         """
-        log.info(f"Saving configuration: {strategy} {symbol} {exchange} {timeframe}")
+        log.info(f"Saving configuration: {strategy} {symbol} {exchange} {timeframe} ({regime} regime)")
         
         # Generate configuration ID
         config_id = self._generate_config_id(strategy, symbol, exchange, timeframe)
@@ -164,6 +166,7 @@ class ConfigurationWriter:
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
+            regime=regime,
             parameters=parameters,
             backtest_result=backtest_result,
             validation_result=validation_result,
@@ -213,52 +216,44 @@ class ConfigurationWriter:
         validation_result: Optional[ValidationResult]
     ) -> str:
         """
-        Determine lifecycle stage based on metrics.
+        Determine lifecycle stage based on performance metrics.
         
-        Stages:
-        - PAPER: Negative profit or failed validation
-        - DISCOVERY: < 30 trades, untested
-        - VALIDATION: 30-100 trades, passing validation
-        - MATURE: > 100 trades, strong metrics, validated
-        - DECAY: (not assigned during training)
+        This determines the configuration's maturity and confidence level,
+        which affects position sizing and risk allocation.
         
-        Returns:
-            Lifecycle stage name
+        This is SEPARATE from activation status (is_active boolean).
+        User can review and activate configs via UI regardless of lifecycle stage.
+        
+        Returns one of: DISCOVERY, VALIDATION, MATURE, DECAY, PAPER
         """
-        total_trades = metrics.get('total_trades', 0)
-        net_profit = metrics.get('net_profit_pct', 0)
+        net_profit = metrics.get('net_profit', 0)
         sharpe = metrics.get('sharpe_ratio', 0)
-        win_rate = metrics.get('gross_win_rate', 0)
+        sample_size = metrics.get('sample_size', 0)
+        fill_rate = metrics.get('fill_rate', 1.0)
         
-        # PAPER: Failing configurations
-        if net_profit < 0 or sharpe < 0.5:
+        # PAPER: Bad performance - unprofitable or poor metrics
+        if net_profit < 0 or sharpe < 0.5 or fill_rate < 0.7:
+            log.info(f"Lifecycle: PAPER (net_profit={net_profit}, sharpe={sharpe}, fill_rate={fill_rate})")
             return 'PAPER'
         
-        # Check validation if available
-        if validation_result:
-            if validation_result.overfitting_detected:
-                return 'PAPER'
-            
-            if validation_result.stability_score < 0.5:
-                return 'PAPER'
-        
-        # DISCOVERY: Small sample, unproven
-        if total_trades < 30:
+        # DISCOVERY: New configuration with small sample - needs more data
+        if sample_size < 30:
+            log.info(f"Lifecycle: DISCOVERY (sample_size={sample_size})")
             return 'DISCOVERY'
         
-        # MATURE: Large sample + strong metrics + validated
-        if (total_trades >= 100 and 
-            sharpe >= 1.5 and 
-            win_rate >= 0.50 and
-            validation_result is not None):
+        # MATURE: Large sample with strong performance - proven configuration
+        if sample_size >= 100 and sharpe >= 1.5:
+            log.info(f"Lifecycle: MATURE (sample_size={sample_size}, sharpe={sharpe})")
             return 'MATURE'
         
-        # VALIDATION: Medium sample, validated
-        if validation_result is not None:
+        # VALIDATION: Growing confidence - building statistical significance
+        if 30 <= sample_size < 100:
+            log.info(f"Lifecycle: VALIDATION (sample_size={sample_size})")
             return 'VALIDATION'
         
-        # Default: DISCOVERY
-        return 'DISCOVERY'
+        # Default to VALIDATION for edge cases
+        log.info(f"Lifecycle: VALIDATION (default, sample_size={sample_size})")
+        return 'VALIDATION'
     
     def _calculate_confidence_score(
         self,
@@ -311,6 +306,7 @@ class ConfigurationWriter:
         symbol: str,
         exchange: str,
         timeframe: str,
+        regime: str,
         parameters: Dict[str, Any],
         backtest_result: BacktestResult,
         validation_result: Optional[ValidationResult],
@@ -340,13 +336,15 @@ class ConfigurationWriter:
                 "engine_hash": hashlib.md5(f"{optimizer}_{timestamp}".encode()).hexdigest()[:16],
                 "runtime_env": "training_v2",
                 "optimizer": optimizer,
+                "regime": regime,
                 **(metadata or {})
             },
             
             "context": {
                 "pair": symbol,
                 "exchange": exchange,
-                "timeframe": timeframe
+                "timeframe": timeframe,
+                "regime": regime
             },
             
             "parameters": parameters,
@@ -506,8 +504,15 @@ class ConfigurationWriter:
                 RETURNING id
             """
             
-            # Use 'sideways' as default regime for now (regime detection not yet implemented)
+            # Extract regime from config context
             regime = config_json.get('context', {}).get('regime', 'sideways')
+            
+            # Convert percentages and handle None values safely
+            gross_win_rate = perf.get('gross_WR', 0)
+            if gross_win_rate is not None:
+                gross_win_rate = float(gross_win_rate) / 100.0
+            else:
+                gross_win_rate = 0.0
             
             result = await conn.fetchval(
                 query,
@@ -519,14 +524,14 @@ class ConfigurationWriter:
                 lifecycle_stage,  # status (maps to lifecycle_stage)
                 False,  # is_active (not yet activated)
                 json.dumps(convert_numpy_types(params)),  # parameters_json
-                float(perf.get('gross_WR', 0)) / 100.0,  # gross_win_rate (convert % to decimal)
-                float(perf.get('avg_win_pct', 0)),  # avg_win
-                float(perf.get('avg_loss_pct', 0)),  # avg_loss
-                float(perf.get('NET_PROFIT', 0)),  # net_profit
-                int(perf.get('sample_size', 0)),  # sample_size
-                float(stats.get('sharpe_ratio', 0)),  # sharpe_ratio
-                float(stats.get('calmar_ratio', 0)),  # calmar_ratio
-                float(stats.get('sortino_ratio', 0)),  # sortino_ratio
+                gross_win_rate,  # gross_win_rate (convert % to decimal)
+                float(perf.get('avg_win_pct', 0) or 0),  # avg_win
+                float(perf.get('avg_loss_pct', 0) or 0),  # avg_loss
+                float(perf.get('NET_PROFIT', 0) or 0),  # net_profit
+                int(perf.get('sample_size', 0) or 0),  # sample_size
+                float(stats.get('sharpe_ratio', 0) or 0),  # sharpe_ratio
+                float(stats.get('calmar_ratio', 0) or 0),  # calmar_ratio
+                float(stats.get('sortino_ratio', 0) or 0),  # sortino_ratio
                 datetime.now(timezone.utc),  # created_at
                 datetime.now(timezone.utc)  # updated_at
             )

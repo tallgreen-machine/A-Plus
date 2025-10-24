@@ -162,6 +162,48 @@ export const getPatternsPerformance = getStrategiesPerformance;
  * Get all trained configurations from the database
  * This is the V2 endpoint - uses trained_configurations table
  */
+/**
+ * Transform backend configuration data to frontend TrainedConfiguration format
+ */
+function transformConfiguration(backendConfig: any): TrainedConfiguration {
+  return {
+    id: backendConfig.id,
+    pair: backendConfig.pair,
+    exchange: backendConfig.exchange,
+    timeframe: backendConfig.timeframe,
+    lifecycle_stage: backendConfig.status as any, // Backend uses 'status' field for lifecycle stage
+    strategy_name: backendConfig.strategyName || backendConfig.strategy_name,
+    totalPL: backendConfig.netProfit || 0,
+    parameters: backendConfig.parametersJson || {},
+    performance: {
+      gross_win_rate: (backendConfig.grossWinRate || 0) * 100, // Convert decimal to percentage
+      avg_win: backendConfig.avgWin || 0,
+      avg_loss: Math.abs(backendConfig.avgLoss || 0),
+      exchange_fees: 0.1, // Default values, can be enhanced later
+      est_slippage: 0.05,
+      actual_slippage: 0.05,
+      net_profit: backendConfig.netProfit || 0,
+      sample_size: backendConfig.sampleSize || 0,
+    },
+    validation: {
+      sharpe_ratio: backendConfig.sharpeRatio || 0,
+      calmar_ratio: backendConfig.calmarRatio || 0,
+      p_value: backendConfig.pValue || 0,
+      z_score: 0, // Not in backend yet
+      stability_score: backendConfig.stabilityScore || 0,
+    },
+    regime: {
+      current_state: backendConfig.regime || 'sideways',
+      regime_probabilities: {
+        trending: 0.33,
+        ranging: 0.33,
+        volatile: 0.34,
+      },
+    },
+    isActive: backendConfig.isActive || false,
+  };
+}
+
 export const getTrainedConfigurations = async (
   userId: string = DEFAULT_USER_ID,
   filters?: {
@@ -174,17 +216,20 @@ export const getTrainedConfigurations = async (
 ): Promise<TrainedConfiguration[]> => {
   // Build query parameters
   const params = new URLSearchParams();
-  if (filters?.strategy) params.append('strategy', filters.strategy);
+  if (filters?.strategy) params.append('strategy_name', filters.strategy);
   if (filters?.exchange) params.append('exchange', filters.exchange);
   if (filters?.pair) params.append('pair', filters.pair);
   if (filters?.status) params.append('status', filters.status);
   if (filters?.is_active !== undefined) params.append('is_active', String(filters.is_active));
 
   const queryString = params.toString();
-  const endpoint = `/api/training/configurations${queryString ? `?${queryString}` : ''}`;
+  const endpoint = `/api/training/configurations/${queryString ? `?${queryString}` : ''}`;
   
   const data = await apiFetch<any[]>(endpoint);
-  return convertKeysToCamelCase<TrainedConfiguration[]>(data);
+  const camelCaseData = convertKeysToCamelCase<any[]>(data);
+  
+  // Transform each configuration to match frontend structure
+  return camelCaseData.map(transformConfiguration);
 };
 
 /**

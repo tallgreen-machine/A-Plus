@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict JGu57n6cubqWnPhzIaJk00p31P6LZFtGUfHhHBHfV1GfxwOYv0NxaMiG9EGzLu0
+\restrict C6tHVQKeckSFsJ7JVQA8AIYSlw4roa48ZGzaY5JRCgtUCJQBrWGxx5psObkHEL7
 
 -- Dumped from database version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
 -- Dumped by pg_dump version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
@@ -30,6 +30,34 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: update_trained_configurations_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_trained_configurations_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: update_training_progress_timestamp(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_training_progress_timestamp() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$;
+
 
 SET default_tablespace = '';
 
@@ -227,10 +255,10 @@ ALTER SEQUENCE public.equity_history_id_seq OWNED BY public.equity_history.id;
 
 
 --
--- Name: market_data_enhanced; Type: TABLE; Schema: public; Owner: -
+-- Name: market_data; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.market_data_enhanced (
+CREATE TABLE public.market_data (
     id bigint NOT NULL,
     exchange character varying(50) NOT NULL,
     symbol character varying(20) NOT NULL,
@@ -249,10 +277,10 @@ WITH (fillfactor='90');
 
 
 --
--- Name: TABLE market_data_enhanced; Type: COMMENT; Schema: public; Owner: -
+-- Name: TABLE market_data; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.market_data_enhanced IS 'Multi-timeframe OHLCV data for ML training';
+COMMENT ON TABLE public.market_data IS 'Multi-timeframe OHLCV data for ML training';
 
 
 --
@@ -266,7 +294,7 @@ CREATE VIEW public.exchange_spreads AS
     (max(close) - min(close)) AS price_spread,
     (((max(close) - min(close)) / avg(close)) * (100)::numeric) AS spread_pct,
     count(*) AS exchange_count
-   FROM public.market_data_enhanced
+   FROM public.market_data
   WHERE ((timeframe)::text = '1h'::text)
   GROUP BY symbol, timeframe, "timestamp"
  HAVING (count(*) > 1)
@@ -330,57 +358,11 @@ CREATE VIEW public.latest_prices AS
     volume,
     "timestamp",
     to_timestamp((("timestamp" / 1000))::double precision) AS price_time
-   FROM public.market_data_enhanced m1
+   FROM public.market_data m1
   WHERE ("timestamp" = ( SELECT max(m2."timestamp") AS max
-           FROM public.market_data_enhanced m2
+           FROM public.market_data m2
           WHERE (((m2.exchange)::text = (m1.exchange)::text) AND ((m2.symbol)::text = (m1.symbol)::text) AND ((m2.timeframe)::text = '1h'::text))))
   ORDER BY symbol, exchange;
-
-
---
--- Name: market_data; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.market_data (
-    id integer NOT NULL,
-    exchange character varying(255) NOT NULL,
-    symbol character varying(255) NOT NULL,
-    "timestamp" bigint NOT NULL,
-    open numeric,
-    high numeric,
-    low numeric,
-    close numeric,
-    volume numeric,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-
---
--- Name: TABLE market_data; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.market_data IS 'Stores OHLCV market data from various exchanges.';
-
-
---
--- Name: COLUMN market_data.exchange; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.market_data.exchange IS 'The exchange from which the data was sourced (e.g., binanceus).';
-
-
---
--- Name: COLUMN market_data.symbol; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.market_data.symbol IS 'The trading symbol (e.g., BTC/USD).';
-
-
---
--- Name: COLUMN market_data."timestamp"; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.market_data."timestamp" IS 'The UTC timestamp for the start of the candle (in milliseconds).';
 
 
 --
@@ -399,27 +381,7 @@ CREATE SEQUENCE public.market_data_enhanced_id_seq
 -- Name: market_data_enhanced_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-ALTER SEQUENCE public.market_data_enhanced_id_seq OWNED BY public.market_data_enhanced.id;
-
-
---
--- Name: market_data_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.market_data_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: market_data_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
---
-
-ALTER SEQUENCE public.market_data_id_seq OWNED BY public.market_data.id;
+ALTER SEQUENCE public.market_data_enhanced_id_seq OWNED BY public.market_data.id;
 
 
 --
@@ -1154,6 +1116,237 @@ ALTER SEQUENCE public.trades_id_seq OWNED BY public.trades.id;
 
 
 --
+-- Name: trained_configurations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trained_configurations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    strategy_name character varying(100) NOT NULL,
+    exchange character varying(50) NOT NULL,
+    pair character varying(20) NOT NULL,
+    timeframe character varying(10) NOT NULL,
+    regime character varying(20) NOT NULL,
+    status character varying(20) DEFAULT 'DISCOVERY'::character varying NOT NULL,
+    is_active boolean DEFAULT false,
+    parameters_json jsonb NOT NULL,
+    gross_win_rate numeric(5,4),
+    avg_win numeric(15,2),
+    avg_loss numeric(15,2),
+    net_profit numeric(15,2),
+    sample_size integer,
+    exchange_fees numeric(15,2),
+    est_slippage numeric(15,2),
+    actual_slippage numeric(15,2),
+    sharpe_ratio numeric(8,4),
+    calmar_ratio numeric(8,4),
+    sortino_ratio numeric(8,4),
+    p_value numeric(8,6),
+    z_score numeric(8,4),
+    monte_carlo_var numeric(15,2),
+    stability_score numeric(5,4),
+    drawdown_duration integer,
+    trade_clustering numeric(5,4),
+    rolling_30d_sharpe numeric(8,4),
+    lifetime_sharpe_ratio numeric(8,4),
+    fill_rate numeric(5,4),
+    partial_fill_rate numeric(5,4),
+    time_to_fill_ms integer,
+    slippage_vs_mid_bps numeric(8,2),
+    adverse_selection_score numeric(5,4),
+    post_trade_drift_1m numeric(8,2),
+    post_trade_drift_5m numeric(8,2),
+    rejection_rate numeric(5,4),
+    regime_classification jsonb,
+    alternative_data_signals jsonb,
+    adversarial_score numeric(5,4),
+    trap_probability numeric(5,4),
+    smart_money_alignment numeric(5,4),
+    kelly_fraction numeric(5,4),
+    correlation_adjusted_weight numeric(5,4),
+    regime_adjusted_size numeric(5,4),
+    max_position_size numeric(15,2),
+    current_allocation numeric(15,2),
+    var_95 numeric(15,2),
+    cvar_95 numeric(15,2),
+    avg_spread_bps numeric(8,2),
+    book_depth_ratio numeric(8,4),
+    book_imbalance numeric(5,4),
+    tick_size_impact numeric(8,4),
+    maker_rebate numeric(8,4),
+    taker_fee numeric(8,4),
+    level2_depth_score numeric(5,4),
+    microstructure_noise numeric(8,4),
+    months_since_discovery integer,
+    performance_degradation numeric(8,4),
+    degradation_velocity numeric(8,4),
+    death_signals jsonb,
+    death_signal_count integer DEFAULT 0,
+    resurrection_score numeric(5,4),
+    model_version character varying(20),
+    discovery_date timestamp with time zone,
+    engine_hash character varying(64),
+    runtime_env character varying(50),
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    last_activated_at timestamp with time zone,
+    last_deactivated_at timestamp with time zone,
+    CONSTRAINT valid_regime CHECK (((regime)::text = ANY ((ARRAY['bull'::character varying, 'bear'::character varying, 'sideways'::character varying, 'volatile'::character varying])::text[]))),
+    CONSTRAINT valid_status CHECK (((status)::text = ANY ((ARRAY['DISCOVERY'::character varying, 'VALIDATION'::character varying, 'MATURE'::character varying, 'DECAY'::character varying, 'PAPER'::character varying])::text[]))),
+    CONSTRAINT valid_timeframe CHECK (((timeframe)::text = ANY ((ARRAY['1m'::character varying, '5m'::character varying, '15m'::character varying, '1h'::character varying, '4h'::character varying, '1d'::character varying])::text[])))
+);
+
+
+--
+-- Name: TABLE trained_configurations; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.trained_configurations IS 'Stores optimized strategy configurations with comprehensive performance and risk metrics';
+
+
+--
+-- Name: training_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.training_jobs (
+    id integer NOT NULL,
+    job_id text NOT NULL,
+    strategy text NOT NULL,
+    symbol text NOT NULL,
+    exchange text NOT NULL,
+    timeframe text NOT NULL,
+    optimizer text NOT NULL,
+    lookback_days integer DEFAULT 90,
+    n_iterations integer,
+    parameter_space jsonb,
+    status text DEFAULT 'PENDING'::text NOT NULL,
+    progress_pct numeric DEFAULT 0,
+    current_iteration integer DEFAULT 0,
+    total_iterations integer,
+    created_at timestamp without time zone DEFAULT now(),
+    started_at timestamp without time zone,
+    completed_at timestamp without time zone,
+    duration_seconds integer,
+    best_config_id text,
+    best_score numeric,
+    best_parameters jsonb,
+    best_metrics jsonb,
+    error_message text,
+    error_trace text,
+    created_by text,
+    metadata jsonb,
+    CONSTRAINT valid_optimizer CHECK ((optimizer = ANY (ARRAY['grid'::text, 'random'::text, 'bayesian'::text]))),
+    CONSTRAINT valid_status CHECK ((status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text, 'COMPLETED'::text, 'FAILED'::text, 'CANCELLED'::text])))
+);
+
+
+--
+-- Name: TABLE training_jobs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.training_jobs IS 'Tracks training job execution status and results';
+
+
+--
+-- Name: COLUMN training_jobs.job_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.job_id IS 'Unique job identifier (UUID)';
+
+
+--
+-- Name: COLUMN training_jobs.optimizer; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.optimizer IS 'Optimization algorithm: grid, random, bayesian';
+
+
+--
+-- Name: COLUMN training_jobs.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.status IS 'Job status: PENDING, RUNNING, COMPLETED, FAILED, CANCELLED';
+
+
+--
+-- Name: COLUMN training_jobs.progress_pct; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.progress_pct IS 'Job completion percentage (0-100)';
+
+
+--
+-- Name: COLUMN training_jobs.best_config_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.best_config_id IS 'Foreign key to trained_configurations.config_id';
+
+
+--
+-- Name: training_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.training_jobs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: training_jobs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.training_jobs_id_seq OWNED BY public.training_jobs.id;
+
+
+--
+-- Name: training_progress; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.training_progress (
+    id bigint NOT NULL,
+    job_id character varying(255) NOT NULL,
+    percentage double precision DEFAULT 0.0 NOT NULL,
+    current_step character varying(100) NOT NULL,
+    step_number integer DEFAULT 1 NOT NULL,
+    total_steps integer DEFAULT 4 NOT NULL,
+    step_percentage double precision DEFAULT 0.0 NOT NULL,
+    step_details jsonb,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    estimated_completion timestamp with time zone,
+    current_iteration integer,
+    total_iterations integer,
+    best_score double precision,
+    current_score double precision,
+    best_params jsonb,
+    is_complete boolean DEFAULT false NOT NULL,
+    error_message text
+);
+
+
+--
+-- Name: training_progress_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.training_progress_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: training_progress_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.training_progress_id_seq OWNED BY public.training_progress.id;
+
+
+--
 -- Name: user_preferences; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1315,7 +1508,7 @@ CREATE VIEW public.volume_by_timeframe AS
     count(*) AS candle_count,
     min(to_timestamp((("timestamp" / 1000))::double precision)) AS start_date,
     max(to_timestamp((("timestamp" / 1000))::double precision)) AS end_date
-   FROM public.market_data_enhanced
+   FROM public.market_data
   GROUP BY symbol, timeframe, exchange
   ORDER BY symbol, timeframe, (sum(volume)) DESC;
 
@@ -1359,14 +1552,7 @@ ALTER TABLE ONLY public.holdings ALTER COLUMN id SET DEFAULT nextval('public.hol
 -- Name: market_data id; Type: DEFAULT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.market_data ALTER COLUMN id SET DEFAULT nextval('public.market_data_id_seq'::regclass);
-
-
---
--- Name: market_data_enhanced id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.market_data_enhanced ALTER COLUMN id SET DEFAULT nextval('public.market_data_enhanced_id_seq'::regclass);
+ALTER TABLE ONLY public.market_data ALTER COLUMN id SET DEFAULT nextval('public.market_data_enhanced_id_seq'::regclass);
 
 
 --
@@ -1482,6 +1668,20 @@ ALTER TABLE ONLY public.trades ALTER COLUMN id SET DEFAULT nextval('public.trade
 
 
 --
+-- Name: training_jobs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_jobs ALTER COLUMN id SET DEFAULT nextval('public.training_jobs_id_seq'::regclass);
+
+
+--
+-- Name: training_progress id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_progress ALTER COLUMN id SET DEFAULT nextval('public.training_progress_id_seq'::regclass);
+
+
+--
 -- Name: user_preferences id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1559,35 +1759,19 @@ ALTER TABLE ONLY public.holdings
 
 
 --
--- Name: market_data_enhanced market_data_enhanced_exchange_symbol_timeframe_timestamp_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: market_data market_data_enhanced_exchange_symbol_timeframe_timestamp_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.market_data_enhanced
+ALTER TABLE ONLY public.market_data
     ADD CONSTRAINT market_data_enhanced_exchange_symbol_timeframe_timestamp_key UNIQUE (exchange, symbol, timeframe, "timestamp");
 
 
 --
--- Name: market_data_enhanced market_data_enhanced_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: market_data market_data_enhanced_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.market_data_enhanced
+ALTER TABLE ONLY public.market_data
     ADD CONSTRAINT market_data_enhanced_pkey PRIMARY KEY (id);
-
-
---
--- Name: market_data market_data_exchange_symbol_timestamp_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.market_data
-    ADD CONSTRAINT market_data_exchange_symbol_timestamp_key UNIQUE (exchange, symbol, "timestamp");
-
-
---
--- Name: market_data market_data_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.market_data
-    ADD CONSTRAINT market_data_pkey PRIMARY KEY (id);
 
 
 --
@@ -1783,6 +1967,54 @@ ALTER TABLE ONLY public.trades
 
 
 --
+-- Name: trained_configurations trained_configurations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trained_configurations
+    ADD CONSTRAINT trained_configurations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: training_jobs training_jobs_job_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_jobs
+    ADD CONSTRAINT training_jobs_job_id_key UNIQUE (job_id);
+
+
+--
+-- Name: training_jobs training_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_jobs
+    ADD CONSTRAINT training_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: training_progress training_progress_job_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_progress
+    ADD CONSTRAINT training_progress_job_id_key UNIQUE (job_id);
+
+
+--
+-- Name: training_progress training_progress_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_progress
+    ADD CONSTRAINT training_progress_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: trained_configurations unique_configuration; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trained_configurations
+    ADD CONSTRAINT unique_configuration UNIQUE (strategy_name, exchange, pair, timeframe, regime);
+
+
+--
 -- Name: user_preferences user_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1884,21 +2116,21 @@ CREATE INDEX idx_holdings_user_id ON public.holdings USING btree (user_id);
 -- Name: idx_market_data_enhanced_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_market_data_enhanced_lookup ON public.market_data_enhanced USING btree (exchange, symbol, timeframe, "timestamp" DESC);
+CREATE INDEX idx_market_data_enhanced_lookup ON public.market_data USING btree (exchange, symbol, timeframe, "timestamp" DESC);
 
 
 --
 -- Name: idx_market_data_enhanced_symbol_time; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_market_data_enhanced_symbol_time ON public.market_data_enhanced USING btree (symbol, timeframe, "timestamp" DESC);
+CREATE INDEX idx_market_data_enhanced_symbol_time ON public.market_data USING btree (symbol, timeframe, "timestamp" DESC);
 
 
 --
 -- Name: idx_market_data_enhanced_timeframe; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_market_data_enhanced_timeframe ON public.market_data_enhanced USING btree (timeframe, "timestamp" DESC);
+CREATE INDEX idx_market_data_enhanced_timeframe ON public.market_data USING btree (timeframe, "timestamp" DESC);
 
 
 --
@@ -2056,6 +2288,132 @@ CREATE INDEX idx_trades_user_id ON public.trades USING btree (user_id);
 
 
 --
+-- Name: idx_trained_configs_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_active ON public.trained_configurations USING btree (is_active) WHERE (is_active = true);
+
+
+--
+-- Name: idx_trained_configs_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_context ON public.trained_configurations USING btree (exchange, pair, timeframe);
+
+
+--
+-- Name: idx_trained_configs_death_signals; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_death_signals ON public.trained_configurations USING gin (death_signals);
+
+
+--
+-- Name: idx_trained_configs_exchange; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_exchange ON public.trained_configurations USING btree (exchange);
+
+
+--
+-- Name: idx_trained_configs_lifecycle; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_lifecycle ON public.trained_configurations USING btree (status, months_since_discovery);
+
+
+--
+-- Name: idx_trained_configs_pair; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_pair ON public.trained_configurations USING btree (pair);
+
+
+--
+-- Name: idx_trained_configs_parameters; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_parameters ON public.trained_configurations USING gin (parameters_json);
+
+
+--
+-- Name: idx_trained_configs_performance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_performance ON public.trained_configurations USING btree (net_profit DESC, sharpe_ratio DESC);
+
+
+--
+-- Name: idx_trained_configs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_status ON public.trained_configurations USING btree (status);
+
+
+--
+-- Name: idx_trained_configs_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_strategy ON public.trained_configurations USING btree (strategy_name);
+
+
+--
+-- Name: idx_training_jobs_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_active ON public.training_jobs USING btree (status, created_at DESC) WHERE (status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text]));
+
+
+--
+-- Name: idx_training_jobs_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_created_at ON public.training_jobs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_training_jobs_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_job_id ON public.training_jobs USING btree (job_id);
+
+
+--
+-- Name: idx_training_jobs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_status ON public.training_jobs USING btree (status);
+
+
+--
+-- Name: idx_training_jobs_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_strategy ON public.training_jobs USING btree (strategy);
+
+
+--
+-- Name: idx_training_jobs_symbol_exchange; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_symbol_exchange ON public.training_jobs USING btree (symbol, exchange);
+
+
+--
+-- Name: idx_training_progress_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_progress_job_id ON public.training_progress USING btree (job_id);
+
+
+--
+-- Name: idx_training_progress_job_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_progress_job_updated ON public.training_progress USING btree (job_id, updated_at DESC);
+
+
+--
 -- Name: idx_user_preferences_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2098,6 +2456,20 @@ CREATE INDEX idx_users_username ON public.users USING btree (username);
 
 
 --
+-- Name: training_progress training_progress_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER training_progress_updated_at BEFORE UPDATE ON public.training_progress FOR EACH ROW EXECUTE FUNCTION public.update_training_progress_timestamp();
+
+
+--
+-- Name: trained_configurations trigger_trained_configurations_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trigger_trained_configurations_updated_at BEFORE UPDATE ON public.trained_configurations FOR EACH ROW EXECUTE FUNCTION public.update_trained_configurations_updated_at();
+
+
+--
 -- Name: active_trades active_trades_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2111,6 +2483,14 @@ ALTER TABLE ONLY public.active_trades
 
 ALTER TABLE ONLY public.equity_history
     ADD CONSTRAINT equity_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: training_progress fk_training_job; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_progress
+    ADD CONSTRAINT fk_training_job FOREIGN KEY (job_id) REFERENCES public.training_jobs(job_id) ON DELETE CASCADE;
 
 
 --
@@ -2221,5 +2601,5 @@ ALTER TABLE ONLY public.user_sessions
 -- PostgreSQL database dump complete
 --
 
-\unrestrict JGu57n6cubqWnPhzIaJk00p31P6LZFtGUfHhHBHfV1GfxwOYv0NxaMiG9EGzLu0
+\unrestrict C6tHVQKeckSFsJ7JVQA8AIYSlw4roa48ZGzaY5JRCgtUCJQBrWGxx5psObkHEL7
 

@@ -62,6 +62,7 @@ const AVAILABLE_SYMBOLS = [
 
 const AVAILABLE_EXCHANGES = ['binanceus'];
 const AVAILABLE_TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
+const AVAILABLE_REGIMES = ['bull', 'bear', 'sideways'];
 
 const API_BASE = 'http://138.68.245.159:8000';
 
@@ -73,6 +74,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
     const [selectedExchange] = useState<string>('binanceus');
     const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
+    const [selectedRegime, setSelectedRegime] = useState<string>('sideways');
     const [optimizer, setOptimizer] = useState<string>('bayesian');
     const [lookbackDays, setLookbackDays] = useState<number>(30);
     const [nIterations, setNIterations] = useState<number>(20);
@@ -82,6 +84,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [trainingLog, setTrainingLog] = useState<LogEntry[]>([]);
     const logContainerRef = useRef<HTMLDivElement>(null);
+    const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Auto-scroll log to bottom
     useEffect(() => {
@@ -89,6 +92,16 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
             logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
         }
     }, [trainingLog]);
+
+    // Cleanup polling interval on unmount
+    useEffect(() => {
+        return () => {
+            if (pollIntervalRef.current) {
+                clearInterval(pollIntervalRef.current);
+                pollIntervalRef.current = null;
+            }
+        };
+    }, []);
 
     const addLog = (content: string, level: LogEntry['level'] = 'info') => {
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -105,10 +118,19 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
         setIsTraining(true);
         setCurrentJob(null);
 
+        // Clear any existing polling interval
+        if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+        }
+
         try {
             addLog(`Starting training for ${selectedSymbol} on ${selectedExchange} (${selectedTimeframe})`, 'info');
             
-            // Start training job
+            // Start training job with timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+            
             const response = await fetch(`${API_BASE}/api/v2/training/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -117,12 +139,16 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     symbol: selectedSymbol,
                     exchange: selectedExchange,
                     timeframe: selectedTimeframe,
+                    regime: selectedRegime,
                     optimizer: optimizer,
                     lookback_days: lookbackDays,
                     n_iterations: nIterations,
                     run_validation: false
-                })
+                }),
+                signal: controller.signal
             });
+
+            clearTimeout(timeoutId);
 
             if (!response.ok) {
                 const error = await response.json();
@@ -135,7 +161,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
             addLog(`Monitoring progress...`, 'info');
 
             // Poll progress every 2 seconds
-            const pollInterval = setInterval(async () => {
+            pollIntervalRef.current = setInterval(async () => {
                 try {
                     const progressResponse = await fetch(`${API_BASE}/api/v2/training/jobs/${job.job_id}/progress`);
                     if (!progressResponse.ok) return;
@@ -158,7 +184,10 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
 
                     // Check completion
                     if (progress.is_complete) {
-                        clearInterval(pollInterval);
+                        if (pollIntervalRef.current) {
+                            clearInterval(pollIntervalRef.current);
+                            pollIntervalRef.current = null;
+                        }
                         
                         if (progress.error_message) {
                             addLog(`✗ Training failed: ${progress.error_message}`, 'error');
@@ -182,7 +211,15 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
             }, 2000);
 
         } catch (error) {
-            addLog(`✗ Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
+            if (error instanceof Error) {
+                if (error.name === 'AbortError') {
+                    addLog(`✗ Request timeout - server may be slow or unavailable`, 'error');
+                } else {
+                    addLog(`✗ Error: ${error.message}`, 'error');
+                }
+            } else {
+                addLog(`✗ Unknown error occurred`, 'error');
+            }
             setIsTraining(false);
         }
     };
@@ -282,6 +319,26 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                                 <option key={tf} value={tf}>{tf}</option>
                             ))}
                         </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
+                            Market Regime
+                        </label>
+                        <select
+                            value={selectedRegime}
+                            onChange={(e) => setSelectedRegime(e.target.value)}
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
+                        >
+                            {AVAILABLE_REGIMES.map(regime => (
+                                <option key={regime} value={regime}>
+                                    {regime.charAt(0).toUpperCase() + regime.slice(1)}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-brand-text-secondary mt-1">
+                            Optimize parameters for this market condition
+                        </p>
                     </div>
 
                     <div>

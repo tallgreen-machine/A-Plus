@@ -11,9 +11,9 @@ interface TrainedAssetsProps {
 
 const LifecycleBadge: React.FC<{ stage: TrainedConfiguration['lifecycle_stage'] }> = ({ stage }) => {
     const config = {
-        MATURE: 'bg-green-500/10 text-green-400',
-        VALIDATION: 'bg-sky-500/10 text-sky-400',
         DISCOVERY: 'bg-purple-500/10 text-purple-400',
+        VALIDATION: 'bg-sky-500/10 text-sky-400',
+        MATURE: 'bg-green-500/10 text-green-400',
         DECAY: 'bg-yellow-500/10 text-yellow-400',
         PAPER: 'bg-gray-500/10 text-gray-400',
     };
@@ -87,7 +87,7 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
     const filterRef = useRef<HTMLDivElement>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
-    const allStages: TrainedConfiguration['lifecycle_stage'][] = ['MATURE', 'VALIDATION', 'DISCOVERY', 'DECAY', 'PAPER'];
+    const allStages: TrainedConfiguration['lifecycle_stage'][] = ['DISCOVERY', 'VALIDATION', 'MATURE', 'DECAY', 'PAPER'];
 
     const getLatencyColor = () => {
         if (serverLatency > 150) return 'text-brand-negative';
@@ -129,6 +129,7 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
             );
         }
 
+        // Filter by lifecycle stage if any stages are selected
         if (selectedStages.length > 0) {
             processedAssets = processedAssets.filter(a => selectedStages.includes(a.lifecycle_stage));
         }
@@ -158,7 +159,7 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
             <header className="shrink-0 flex justify-between items-start">
                 <div>
                     <h1 className="text-3xl font-bold text-brand-text-primary">Trained Assets</h1>
-                    <p className="text-brand-text-secondary mt-1">Results from the Strategy Studio, ranked by performance.</p>
+                    <p className="text-brand-text-secondary mt-1">Review training results and activate promising configurations for live trading.</p>
                 </div>
                 
                 {/* Server Load & Latency Widget */}

@@ -329,8 +329,9 @@ CREATE TABLE IF NOT EXISTS trained_configurations (
     -- Constraints
     CONSTRAINT valid_status CHECK (status IN ('DISCOVERY', 'VALIDATION', 'MATURE', 'DECAY', 'PAPER')),
     CONSTRAINT valid_regime CHECK (regime IN ('bull', 'bear', 'sideways', 'volatile')),
-    CONSTRAINT valid_timeframe CHECK (timeframe IN ('1m', '5m', '15m', '1h', '4h', '1d')),
-    CONSTRAINT unique_configuration UNIQUE (strategy_name, exchange, pair, timeframe, regime)
+    CONSTRAINT valid_timeframe CHECK (timeframe IN ('1m', '5m', '15m', '1h', '4h', '1d'))
+    -- Note: Removed unique_configuration constraint to allow multiple training runs
+    -- Each configuration gets a unique UUID (id) as the primary key
 );
 
 CREATE INDEX IF NOT EXISTS idx_trained_configs_strategy ON trained_configurations(strategy_name);

@@ -89,6 +89,44 @@ python3 -m venv "${DEST}/.venv"
 "${DEST}/.venv/bin/pip" install -r "${DEST}/requirements.txt"
 EOF
 
+echo "[deploy] installing Redis for RQ job queue"
+ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
+set -euo pipefail
+DEST="${DEST:-/srv/trad}"
+
+# Check if Redis is already installed
+if ! command -v redis-cli &> /dev/null; then
+    echo "Redis not found, installing..."
+    sudo "${DEST}/ops/scripts/install_redis.sh"
+else
+    echo "Redis already installed"
+    redis-cli --version
+fi
+
+# Ensure Redis is running
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+redis-cli ping || (echo "Redis not responding" && exit 1)
+EOF
+
+echo "[deploy] installing RQ training worker service"
+ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
+set -euo pipefail
+DEST="${DEST:-/srv/trad}"
+
+# Stop existing worker if running
+sudo systemctl stop trad-worker.service || true
+sudo systemctl disable trad-worker.service || true
+
+# Install worker service
+sudo touch /var/log/trad-worker.log || true
+sudo cp "${DEST}/ops/systemd/trad-worker.service" /etc/systemd/system/
+
+# Reload systemd and enable worker (will be started in final restart section)
+sudo systemctl daemon-reload
+sudo systemctl enable trad-worker.service
+EOF
+
 echo "[deploy] checking postgres authentication config"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
@@ -126,16 +164,56 @@ fi
     PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -a -f "${DEST}/sql/dashboard_init.sql"
 )
 
-# Start the TradePulse IQ dashboard service (FastAPI backend)
-sudo systemctl enable --now dashboard.service
-echo "TradePulse IQ dashboard service started."
+# Enable dashboard service (will be started in final restart section)
+sudo systemctl enable dashboard.service
+echo "Database initialized."
 EOF
 
-echo "[deploy] restarting trad service"
+echo "[deploy] restarting all services"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
-sudo systemctl restart trad.service
-echo "Trad service restarted."
+
+# Dynamically detect and restart all trad-related services
+echo "Detecting trad services..."
+SERVICES=$(systemctl list-units --type=service --all | grep -E '(trad|dashboard)' | awk '{print $1}' | grep -E '\.(service)$' || true)
+
+if [ -z "$SERVICES" ]; then
+    echo "No trad services found to restart"
+    exit 0
+fi
+
+echo "Found services:"
+echo "$SERVICES"
+echo ""
+
+# Stop all services first (clean shutdown)
+echo "Stopping services..."
+for service in $SERVICES; do
+    echo "  Stopping $service..."
+    sudo systemctl stop "$service" || true
+done
+
+# Clear Python bytecode cache to ensure fresh imports
+echo "Clearing Python bytecode cache..."
+find /srv/trad -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+find /srv/trad -type f -name '*.pyc' -delete 2>/dev/null || true
+
+# Start all services (clean start)
+echo "Starting services..."
+for service in $SERVICES; do
+    echo "  Starting $service..."
+    sudo systemctl start "$service"
+done
+
+echo ""
+echo "Service status:"
+for service in $SERVICES; do
+    echo "---"
+    sudo systemctl status "$service" --no-pager --lines=5 || true
+done
+
+echo ""
+echo "All services restarted successfully."
 EOF
 
 echo "[deploy] complete"

@@ -13,3 +13,5 @@ python-multipart
 asyncpg
 scikit-optimize
 scikit-learn
+redis>=5.0.0
+rq>=1.15.0

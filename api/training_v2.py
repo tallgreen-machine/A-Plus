@@ -11,7 +11,7 @@ Provides REST endpoints for the V2 training system:
 Integrates with training/ components for ML-powered parameter optimization.
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
@@ -20,6 +20,11 @@ import uuid
 import logging
 import traceback
 import json
+
+# RQ imports
+from redis import Redis
+from rq import Queue
+from rq.job import Job
 
 from training.data_collector import DataCollector
 from training.backtest_engine import BacktestEngine
@@ -39,6 +44,25 @@ from configparser import ConfigParser
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v2/training", tags=["Training V2"])
 
+
+# ===== RQ Configuration =====
+
+def get_redis_url() -> str:
+    """Get Redis connection URL from environment."""
+    return os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+
+
+def get_redis_connection() -> Redis:
+    """Get Redis connection for RQ."""
+    redis_url = get_redis_url()
+    return Redis.from_url(redis_url)
+
+
+def get_training_queue() -> Queue:
+    """Get RQ queue for training jobs."""
+    redis_conn = get_redis_connection()
+    return Queue('training', connection=redis_conn)
+
 # ===== Request/Response Models =====
 
 class StartTrainingRequest(BaseModel):
@@ -47,6 +71,7 @@ class StartTrainingRequest(BaseModel):
     symbol: str = Field(..., description="Trading pair (e.g., BTC/USDT)")
     exchange: str = Field(..., description="Exchange name (e.g., binance)")
     timeframe: str = Field(..., description="Timeframe (e.g., 5m, 1h)")
+    regime: str = Field(default="sideways", description="Market regime: bull, bear, or sideways")
     optimizer: str = Field(
         default="bayesian",
         description="Optimizer: grid, random, or bayesian"
@@ -68,6 +93,7 @@ class StartTrainingRequest(BaseModel):
                 "symbol": "BTC/USDT",
                 "exchange": "binance",
                 "timeframe": "5m",
+                "regime": "sideways",
                 "optimizer": "bayesian",
                 "lookback_days": 90,
                 "n_iterations": 200,
@@ -426,15 +452,12 @@ async def run_training_task(
 # ===== API Endpoints =====
 
 @router.post("/start", response_model=TrainingJobResponse)
-async def start_training(
-    request: StartTrainingRequest,
-    background_tasks: BackgroundTasks
-):
+async def start_training(request: StartTrainingRequest):
     """
     Start a new training job.
     
-    The job runs asynchronously in the background. Use the returned job_id
-    to poll for status and results.
+    The job is enqueued in Redis and processed by the training worker.
+    Use the returned job_id to poll for status and results.
     
     Example:
         ```
@@ -492,10 +515,30 @@ async def start_training(
         
         await conn.close()
         
-        # Start background task
-        background_tasks.add_task(run_training_task, job_id, request)
+        # Enqueue job in RQ (replaces BackgroundTasks)
+        from training.rq_jobs import run_training_job
         
-        log.info(f"Training job {job_id} queued: {request.strategy} {request.symbol}")
+        queue = get_training_queue()
+        rq_job = queue.enqueue(
+            run_training_job,
+            args=(                     # Explicit args tuple for RQ serialization
+                job_id,
+                request.strategy,
+                request.symbol,
+                request.exchange,
+                request.timeframe,
+                request.regime,
+                request.optimizer,
+                request.lookback_days,
+                request.n_iterations,
+                request.run_validation
+            ),
+            job_timeout=1800,          # RQ parameter: 30 minutes in seconds (RQ 2.x requires integer)
+            result_ttl=86400,          # RQ parameter: keep result for 24 hours
+            failure_ttl=604800         # RQ parameter: keep failed jobs for 7 days
+        )
+        
+        log.info(f"Training job {job_id} enqueued in RQ: {request.strategy} {request.symbol} (RQ job: {rq_job.id})")
         
         return TrainingJobResponse(
             job_id=job_id,

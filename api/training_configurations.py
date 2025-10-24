@@ -235,7 +235,8 @@ async def activate_configuration(configuration_id: str):
     """
     Activate a configuration for live trading
     
-    Sets is_active=true and updates last_activated_at timestamp
+    Sets is_active=true and updates last_activated_at timestamp.
+    Does NOT change status - status remains as lifecycle stage (DISCOVERY/VALIDATION/MATURE/etc.)
     """
     try:
         db = get_database()
@@ -257,7 +258,7 @@ async def activate_configuration(configuration_id: str):
         if not result:
             raise HTTPException(status_code=404, detail=f"Configuration {configuration_id} not found")
         
-        log.info(f"Activated configuration: {result['strategy_name']} on {result['exchange']} {result['pair']} {result['timeframe']}")
+        log.info(f"Activated configuration: {result['strategy_name']} on {result['exchange']} {result['pair']} {result['timeframe']} (lifecycle: {result['status']})")
         
         return {
             "success": True,
@@ -278,7 +279,8 @@ async def deactivate_configuration(configuration_id: str):
     """
     Deactivate a configuration (stop live trading)
     
-    Sets is_active=false and updates last_deactivated_at timestamp
+    Sets is_active=false and updates last_deactivated_at timestamp.
+    Does NOT change status - status remains as lifecycle stage (DISCOVERY/VALIDATION/MATURE/etc.)
     """
     try:
         db = get_database()
@@ -300,7 +302,7 @@ async def deactivate_configuration(configuration_id: str):
         if not result:
             raise HTTPException(status_code=404, detail=f"Configuration {configuration_id} not found")
         
-        log.info(f"Deactivated configuration: {result['strategy_name']} on {result['exchange']} {result['pair']} {result['timeframe']}")
+        log.info(f"Deactivated configuration: {result['strategy_name']} on {result['exchange']} {result['pair']} {result['timeframe']} (lifecycle: {result['status']})")
         
         return {
             "success": True,

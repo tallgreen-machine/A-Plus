@@ -59,45 +59,11 @@ const App: React.FC = () => {
         try {
             if (isInitial) setLoading(true);
 
-            // FIX: Pass promises as a tuple to `Promise.all` to preserve type information for each element.
-            // When an array of promises with different resolved types is created separately, TypeScript infers a
-            // union type for the array elements, leading to type errors on destructuring the result of `Promise.all`.
-            const [
-                portfolioData,
-                tradesData,
-                logsData,
-                performanceData,
-                statusData,
-                strategiesData,
-                activeTradesData,
-                trainedConfigsData,
-            ] = await Promise.all([
-                api.getPortfolio(currentUser),
-                api.getTrades(currentUser),
-                api.getLogs(currentUser),
-                api.getPerformance(currentUser),
-                api.getStatus(),
-                api.getStrategiesPerformance(currentUser),
-                api.getActiveTrades(currentUser),
-                api.getTrainedConfigurations(currentUser),
-            ]);
-
-            setPortfolio(portfolioData.portfolio);
-            setTrades(tradesData);
-            setLogs(logsData);
-            setPerformance(performanceData);
+            // FIX: Fetch only non-auth endpoints for now
+            // Auth endpoints (portfolio, trades, logs, performance, strategies, activeTrades) 
+            // will be enabled once authentication is properly set up
+            const statusData = await api.getStatus();
             setStatus(statusData);
-            setStrategies(strategiesData);
-            setActiveTrades(activeTradesData);
-            setTrainedConfigurations(prev => {
-                // Preserve isActive state during updates
-                const activeStateMap = new Map(prev?.map(c => [c.id, c.isActive]));
-                return trainedConfigsData.map(c => ({
-                    ...c, 
-                    isActive: activeStateMap.get(c.id) || false 
-                }));
-            });
-
 
         } catch (error) {
             console.error("Failed to fetch data:", error);
@@ -137,6 +103,32 @@ const App: React.FC = () => {
         return () => clearInterval(interval);
     }, []); // Run only once on mount
     
+    // NEW useEffect for training configurations (no auth required)
+    useEffect(() => {
+        const fetchTrainingConfigurations = async () => {
+            try {
+                const configs = await api.getTrainedConfigurations(currentUser);
+                setTrainedConfigurations(prev => {
+                    // Preserve isActive state during updates
+                    const activeStateMap = new Map(prev?.map(c => [c.id, c.isActive]));
+                    return configs.map(c => ({
+                        ...c,
+                        isActive: activeStateMap.get(c.id) || false
+                    }));
+                });
+            } catch (error) {
+                console.error("Failed to fetch training configurations:", error);
+            }
+        };
+
+        // Fetch immediately
+        fetchTrainingConfigurations();
+
+        // Set up interval to refresh every 5 seconds
+        const interval = setInterval(fetchTrainingConfigurations, 5000);
+        return () => clearInterval(interval);
+    }, [currentUser]);
+
     const handleUserChange = (userId: string) => {
         if (userId !== currentUser) {
             setCurrentUser(userId);
