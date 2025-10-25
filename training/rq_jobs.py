@@ -114,39 +114,221 @@ async def _run_training_job_async(
         else:
             raise ValueError(f"Unknown optimizer: {optimizer}")
         
-        # Define optimization callback
-        def optimization_callback(iteration: int, score: float, params: Dict[str, Any]):
-            pct = (iteration / n_iterations) * 100
-            asyncio.create_task(progress.update(
-                step_percentage=pct,
-                iteration=iteration,
-                scores={'current': score},
-                params=params
-            ))
+        # Shared state for progress tracking
+        import time
+        import threading
+        
+        progress_state = {
+            'iteration': 0,
+            'total': n_iterations,
+            'score': 0.0,
+            'last_update_pct': 0.0,
+            'running': True,
+            'last_iteration_time': time.time(),
+            'avg_iteration_duration': 5.0  # Initial estimate
+        }
+        
+        # Background thread that interpolates progress between iterations
+        def progress_interpolation_thread():
+            """Update progress smoothly between iterations"""
+            import psycopg2
+            import os
+            
+            while progress_state['running']:
+                try:
+                    current_iteration = progress_state['iteration']
+                    total = progress_state['total']
+                    
+                    if current_iteration == 0 or current_iteration >= total:
+                        time.sleep(0.5)
+                        continue
+                    
+                    # Calculate time since last iteration
+                    elapsed = time.time() - progress_state['last_iteration_time']
+                    avg_duration = progress_state['avg_iteration_duration']
+                    
+                    # Estimate progress within current iteration (0-1)
+                    if avg_duration > 0:
+                        sub_iteration_progress = min(elapsed / avg_duration, 0.99)
+                    else:
+                        sub_iteration_progress = 0.5
+                    
+                    # Calculate interpolated iteration count
+                    interpolated_iteration = current_iteration + sub_iteration_progress
+                    step_pct = (interpolated_iteration / total) * 100
+                    
+                    # Calculate overall percentage
+                    previous_weight = 0.25  # data_preparation step
+                    current_contribution = 0.50 * (step_pct / 100.0)  # optimization step is 50% of total
+                    overall_pct = (previous_weight + current_contribution) * 100
+                    
+                    # Only update if changed by at least 0.1%
+                    if abs(overall_pct - progress_state['last_update_pct']) >= 0.1:
+                        progress_state['last_update_pct'] = overall_pct
+                        
+                        # Update database
+                        db_host = os.getenv('DB_HOST', 'localhost')
+                        db_port = os.getenv('DB_PORT', '5432')
+                        db_user = os.getenv('DB_USER', 'traduser')
+                        db_pass = os.getenv('DB_PASSWORD', 'TRAD123!')
+                        db_name = os.getenv('DB_NAME', 'trad')
+                        
+                        conn = psycopg2.connect(
+                            host=db_host, port=db_port, user=db_user,
+                            password=db_pass, dbname=db_name
+                        )
+                        cur = conn.cursor()
+                        cur.execute("""
+                            UPDATE training_jobs
+                            SET progress = %s,
+                                current_episode = %s,
+                                total_episodes = %s,
+                                current_stage = 'Training'
+                            WHERE id = %s
+                        """, (
+                            round(overall_pct, 1),
+                            int(interpolated_iteration),
+                            total,
+                            int(job_id)
+                        ))
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        
+                        log.info(f"🔄 Interpolated progress: {overall_pct:.1f}% (iter {interpolated_iteration:.1f}/{total})")
+                
+                except Exception as e:
+                    log.error(f"❌ Interpolation error: {e}")
+                
+                # Update every 500ms
+                time.sleep(0.5)
+        
+        # Start interpolation thread
+        interpolation_thread = threading.Thread(target=progress_interpolation_thread, daemon=True)
+        interpolation_thread.start()
+        
+        # Define progress callback for fine-grained updates
+        def optimization_progress_callback(iteration: int, total: int, score: float):
+            """Store progress state and update database periodically (synchronous for thread safety)"""
+            try:
+                # Update timing for interpolation
+                current_time = time.time()
+                if progress_state['iteration'] > 0:
+                    duration = current_time - progress_state['last_iteration_time']
+                    # Exponential moving average
+                    progress_state['avg_iteration_duration'] = (
+                        0.7 * progress_state['avg_iteration_duration'] + 0.3 * duration
+                    )
+                
+                progress_state['iteration'] = iteration
+                progress_state['total'] = total
+                progress_state['score'] = score
+                progress_state['last_iteration_time'] = current_time
+                
+                # Calculate percentage within THIS STEP (optimization is 25-75%, so 50% of total)
+                step_pct = (iteration / total) * 100
+                
+                # Log every callback invocation
+                log.info(f"🔔 Callback invoked: iteration {iteration}/{total} ({step_pct:.1f}%), score={score:.4f}")
+                
+                # Update DB every 0.1% for fine-grained progress
+                if abs(step_pct - progress_state['last_update_pct']) >= 0.1 or iteration == total:
+                    progress_state['last_update_pct'] = step_pct
+                    
+                    log.info(f"💾 Updating DB: step_pct={step_pct:.1f}%")
+                    
+                    # Use synchronous psycopg2 instead of asyncpg since we're in a thread
+                    import psycopg2
+                    import os
+                    
+                    try:
+                        # Calculate overall percentage
+                        previous_weight = 0.25  # data_preparation step
+                        current_contribution = 0.50 * (step_pct / 100.0)  # optimization step is 50% of total
+                        overall_pct = (previous_weight + current_contribution) * 100
+                        
+                        # Build connection from environment variables
+                        db_host = os.getenv('DB_HOST', 'localhost')
+                        db_port = os.getenv('DB_PORT', '5432')
+                        db_user = os.getenv('DB_USER', 'traduser')
+                        db_pass = os.getenv('DB_PASSWORD', 'TRAD123!')
+                        db_name = os.getenv('DB_NAME', 'trad')
+                        
+                        # Connect and update
+                        conn = psycopg2.connect(
+                            host=db_host,
+                            port=db_port,
+                            user=db_user,
+                            password=db_pass,
+                            dbname=db_name
+                        )
+                        cur = conn.cursor()
+                        
+                        cur.execute("""
+                            UPDATE training_jobs
+                            SET progress = %s,
+                                current_episode = %s,
+                                total_episodes = %s,
+                                current_reward = %s,
+                                current_loss = %s,
+                                current_stage = 'Training'
+                            WHERE id = %s
+                        """, (
+                            round(overall_pct, 1),
+                            iteration,
+                            total,
+                            score if score > 0 else None,
+                            abs(score) if score < 0 else None,
+                            int(job_id)
+                        ))
+                        
+                        conn.commit()
+                        cur.close()
+                        conn.close()
+                        
+                        log.info(f"✅ DB updated: {overall_pct:.1f}%")
+                    except Exception as e:
+                        log.error(f"❌ Failed to update DB: {e}")
+                    
+            except Exception as e:
+                log.error(f"❌ Error in callback: {e}", exc_info=True)
         
         # Run optimization with all required parameters
-        if optimizer == 'bayesian':
-            # BayesianOptimizer uses n_calls instead of n_iterations
-            result = opt.optimize(
-                backtest_engine=backtest_engine,
-                data=data,
-                strategy_class=LiquiditySweepStrategy,
-                parameter_space=parameter_space,
-                n_calls=n_iterations,
-                objective='sharpe_ratio',
-                min_trades=10
-            )
-        else:
-            # RandomSearchOptimizer and GridSearchOptimizer use n_iterations
-            result = opt.optimize(
-                backtest_engine=backtest_engine,
-                data=data,
-                strategy_class=LiquiditySweepStrategy,
-                parameter_space=parameter_space,
-                n_iterations=n_iterations,
-                objective='sharpe_ratio',
-                min_trades=10
-            )
+        # Run in executor to avoid blocking the event loop
+        import concurrent.futures
+        loop = asyncio.get_event_loop()
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            if optimizer == 'bayesian':
+                # BayesianOptimizer uses n_calls instead of n_iterations
+                result = await loop.run_in_executor(
+                    executor,
+                    lambda: opt.optimize(
+                        backtest_engine=backtest_engine,
+                        data=data,
+                        strategy_class=LiquiditySweepStrategy,
+                        parameter_space=parameter_space,
+                        n_calls=n_iterations,
+                        objective='sharpe_ratio',
+                        min_trades=10,
+                        progress_callback=optimization_progress_callback
+                    )
+                )
+            else:
+                # RandomSearchOptimizer and GridSearchOptimizer use n_iterations
+                result = await loop.run_in_executor(
+                    executor,
+                    lambda: opt.optimize(
+                        backtest_engine=backtest_engine,
+                        data=data,
+                        strategy_class=LiquiditySweepStrategy,
+                        parameter_space=parameter_space,
+                        n_iterations=n_iterations,
+                        objective='sharpe_ratio',
+                        min_trades=10,
+                        progress_callback=optimization_progress_callback
+                    )
+                )
         
         best_params = result['best_parameters']
         best_score = result['best_score']

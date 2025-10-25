@@ -345,6 +345,47 @@ CREATE INDEX IF NOT EXISTS idx_trained_configs_lifecycle ON trained_configuratio
 CREATE INDEX IF NOT EXISTS idx_trained_configs_parameters ON trained_configurations USING GIN (parameters_json);
 CREATE INDEX IF NOT EXISTS idx_trained_configs_death_signals ON trained_configurations USING GIN (death_signals);
 
+-- Training jobs queue (persistent job tracking)
+CREATE TABLE IF NOT EXISTS training_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    config_id UUID REFERENCES trained_configurations(id) ON DELETE CASCADE,
+    rq_job_id VARCHAR(255) UNIQUE,  -- RQ job ID for status tracking
+    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+    progress NUMERIC(5,2) DEFAULT 0.0 CHECK (progress >= 0 AND progress <= 100),  -- 0.00 to 100.00
+    
+    -- Metadata for queue display
+    strategy_name VARCHAR(100) NOT NULL,
+    exchange VARCHAR(50) NOT NULL,
+    pair VARCHAR(20) NOT NULL,
+    timeframe VARCHAR(10) NOT NULL,
+    regime VARCHAR(20) NOT NULL,
+    
+    -- Progress details (for animated display)
+    current_episode INTEGER,
+    total_episodes INTEGER,
+    current_reward NUMERIC(10,4),
+    current_loss NUMERIC(10,4),
+    current_stage VARCHAR(50),  -- 'loading', 'training', 'evaluating', 'saving'
+    
+    -- Timestamps
+    submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    
+    -- Error tracking
+    error_message TEXT,
+    
+    -- Indexes for efficient querying
+    CONSTRAINT valid_timestamps CHECK (
+        (started_at IS NULL OR started_at >= submitted_at) AND
+        (completed_at IS NULL OR completed_at >= COALESCE(started_at, submitted_at))
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_jobs_status ON training_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_training_jobs_submitted_at ON training_jobs(submitted_at);
+CREATE INDEX IF NOT EXISTS idx_training_jobs_rq_job_id ON training_jobs(rq_job_id);
+
 -- Strategy exchange performance (per exchange metrics)
 CREATE TABLE IF NOT EXISTS strategy_exchange_performance (
     id SERIAL PRIMARY KEY,

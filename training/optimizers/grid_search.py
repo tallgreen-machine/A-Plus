@@ -14,7 +14,7 @@ Best for:
 import itertools
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional, Callable
 import logging
 from tqdm import tqdm
 
@@ -62,7 +62,8 @@ class GridSearchOptimizer:
         strategy_class: Any,
         parameter_space: Dict[str, Any],
         objective: str = 'sharpe_ratio',
-        min_trades: int = 10
+        min_trades: int = 10,
+        progress_callback: Optional[Callable[[int, int, float], None]] = None
     ) -> Dict[str, Any]:
         """
         Run grid search optimization.
@@ -112,7 +113,7 @@ class GridSearchOptimizer:
         
         iterator = tqdm(param_grid, desc="Grid Search") if self.verbose else param_grid
         
-        for params in iterator:
+        for i, params in enumerate(iterator):
             try:
                 # Create strategy instance
                 strategy = strategy_class(params)
@@ -123,12 +124,19 @@ class GridSearchOptimizer:
                     strategy_instance=strategy
                 )
                 
+                # Get objective value
+                objective_value = backtest_result.metrics.get(objective, 0)
+                
+                # Report progress via callback
+                if progress_callback:
+                    progress_callback(i + 1, total_combinations, objective_value)
+                
                 # Record results
                 if backtest_result.metrics['total_trades'] >= min_trades:
                     results.append({
                         'parameters': params.copy(),
                         'metrics': backtest_result.metrics,
-                        'objective_value': backtest_result.metrics.get(objective, 0)
+                        'objective_value': objective_value
                     })
                 
             except Exception as e:

@@ -20,7 +20,7 @@ Requires: scikit-optimize (pip install scikit-optimize)
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Tuple, Union
+from typing import Dict, Any, List, Tuple, Union, Callable, Optional
 import logging
 from tqdm import tqdm
 
@@ -103,7 +103,8 @@ class BayesianOptimizer:
         n_initial_points: int = 10,
         objective: str = 'sharpe_ratio',
         min_trades: int = 10,
-        acq_func: str = 'gp_hedge'
+        acq_func: str = 'gp_hedge',
+        progress_callback: Optional[Callable[[int, int, float], None]] = None
     ) -> Dict[str, Any]:
         """
         Run Bayesian optimization using Gaussian Process.
@@ -135,6 +136,7 @@ class BayesianOptimizer:
                 - 'EI': Expected Improvement
                 - 'LCB': Lower Confidence Bound
                 - 'PI': Probability of Improvement
+            progress_callback: Optional callback(iteration, total, score) for progress updates
         
         Returns:
             Dict with:
@@ -200,6 +202,10 @@ class BayesianOptimizer:
                     'metrics': backtest_result.metrics,
                     'objective_value': objective_value
                 })
+                
+                # Call progress callback if provided
+                if progress_callback:
+                    progress_callback(iteration_counter[0], n_calls, objective_value)
                 
                 # Return negative (skopt minimizes)
                 return -objective_value

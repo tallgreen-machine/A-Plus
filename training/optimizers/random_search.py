@@ -15,7 +15,7 @@ fewer evaluations (Bergstra & Bengio, 2012).
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Tuple, Union
+from typing import Dict, Any, List, Tuple, Union, Callable, Optional
 import logging
 from tqdm import tqdm
 
@@ -71,7 +71,8 @@ class RandomSearchOptimizer:
         parameter_space: Dict[str, Any],
         n_iterations: int = 100,
         objective: str = 'sharpe_ratio',
-        min_trades: int = 10
+        min_trades: int = 10,
+        progress_callback: Optional[Callable[[int, int, float], None]] = None
     ) -> Dict[str, Any]:
         """
         Run random search optimization.
@@ -133,11 +134,16 @@ class RandomSearchOptimizer:
                 
                 # Record results
                 if backtest_result.metrics['total_trades'] >= min_trades:
+                    objective_value = backtest_result.metrics.get(objective, 0)
                     results.append({
                         'parameters': params.copy(),
                         'metrics': backtest_result.metrics,
-                        'objective_value': backtest_result.metrics.get(objective, 0)
+                        'objective_value': objective_value
                     })
+                    
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(i + 1, n_iterations, objective_value)
                 
             except Exception as e:
                 log.debug(f"Backtest failed for params {params}: {e}")

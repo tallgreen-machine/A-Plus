@@ -3,6 +3,9 @@ import * as api from '../services/realApi';
 import type { Strategy, TrainedConfiguration } from '../types';
 import { Skeleton } from './Skeleton';
 import { PlusIcon, TrashIcon, SparklesIcon, RocketIcon } from './icons';
+import ResourceMonitor from './ResourceMonitor';
+import TrainingQueue from './TrainingQueue';
+import AnimatedProgress from './AnimatedProgress';
 
 interface StrategyStudioProps {
     currentUser: string;
@@ -83,6 +86,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [isTraining, setIsTraining] = useState(false);
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [trainingLog, setTrainingLog] = useState<LogEntry[]>([]);
+    const [selectedQueueJobId, setSelectedQueueJobId] = useState<string | null>(null);
     const logContainerRef = useRef<HTMLDivElement>(null);
     const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -125,25 +129,24 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
         }
 
         try {
-            addLog(`Starting training for ${selectedSymbol} on ${selectedExchange} (${selectedTimeframe})`, 'info');
+            addLog(`Submitting training job for ${selectedSymbol} on ${selectedExchange} (${selectedTimeframe})`, 'info');
             
-            // Start training job with timeout
+            // Submit training job to queue
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
             
-            const response = await fetch(`${API_BASE}/api/v2/training/start`, {
+            const response = await fetch(`${API_BASE}/api/training/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    strategy: selectedStrategies[0], // First selected strategy
-                    symbol: selectedSymbol,
+                    strategy_name: selectedStrategies[0], // First selected strategy
+                    pair: selectedSymbol,
                     exchange: selectedExchange,
                     timeframe: selectedTimeframe,
                     regime: selectedRegime,
                     optimizer: optimizer,
                     lookback_days: lookbackDays,
-                    n_iterations: nIterations,
-                    run_validation: false
+                    n_iterations: nIterations
                 }),
                 signal: controller.signal
             });
@@ -152,63 +155,16 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
 
             if (!response.ok) {
                 const error = await response.json();
-                throw new Error(error.detail || 'Failed to start training');
+                throw new Error(error.detail || 'Failed to submit training job');
             }
 
-            const job: TrainingJob = await response.json();
+            const job = await response.json();
             setCurrentJob(job);
-            addLog(`✓ Training job started: ${job.job_id}`, 'success');
-            addLog(`Monitoring progress...`, 'info');
-
-            // Poll progress every 2 seconds
-            pollIntervalRef.current = setInterval(async () => {
-                try {
-                    const progressResponse = await fetch(`${API_BASE}/api/v2/training/jobs/${job.job_id}/progress`);
-                    if (!progressResponse.ok) return;
-
-                    const progress: TrainingProgress = await progressResponse.json();
-
-                    // Build progress log message
-                    const pct = progress.percentage.toFixed(1);
-                    let progressLine = `[${pct}%] Step ${progress.step_number}/4: ${progress.current_step}`;
-                    
-                    if (progress.current_iteration && progress.total_iterations) {
-                        progressLine += ` | Iteration ${progress.current_iteration}/${progress.total_iterations}`;
-                    }
-                    
-                    if (progress.best_score !== undefined && progress.best_score !== null) {
-                        progressLine += ` | Best Score: ${progress.best_score.toFixed(4)}`;
-                    }
-
-                    addLog(progressLine, 'progress');
-
-                    // Check completion
-                    if (progress.is_complete) {
-                        if (pollIntervalRef.current) {
-                            clearInterval(pollIntervalRef.current);
-                            pollIntervalRef.current = null;
-                        }
-                        
-                        if (progress.error_message) {
-                            addLog(`✗ Training failed: ${progress.error_message}`, 'error');
-                        } else {
-                            addLog(`✓ Training complete! Best score: ${progress.best_score?.toFixed(4)}`, 'success');
-                            
-                            // Fetch results
-                            const resultsResponse = await fetch(`${API_BASE}/api/v2/training/jobs/${job.job_id}/results`);
-                            if (resultsResponse.ok) {
-                                const results = await resultsResponse.json();
-                                addLog(`Configuration saved with ID: ${results.config_id}`, 'success');
-                                addLog(`View trained asset on the Trained Assets page`, 'info');
-                            }
-                        }
-                        
-                        setIsTraining(false);
-                    }
-                } catch (error) {
-                    console.error('Error polling progress:', error);
-                }
-            }, 2000);
+            setSelectedQueueJobId(job.id); // Auto-select the new job
+            addLog(`✓ Training job submitted: ${job.id}`, 'success');
+            addLog(`Job added to queue. Select it to view progress.`, 'info');
+            
+            setIsTraining(false); // No longer blocking, job is in queue
 
         } catch (error) {
             if (error instanceof Error) {
@@ -460,6 +416,9 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     
     return (
         <div className="h-full flex flex-col">
+            {/* Resource Monitor Header */}
+            <ResourceMonitor />
+            
             <header className="p-4 lg:p-6 border-b border-brand-border shrink-0">
                 <div>
                     <h1 className="text-3xl font-bold text-brand-text-primary">Strategy Studio</h1>
@@ -468,16 +427,27 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     </p>
                 </div>
             </header>
-            <main className="flex-1 grid grid-cols-[280px_1fr_380px] overflow-hidden">
-                <aside className="bg-brand-surface/50 border-r border-brand-border overflow-hidden">
+            <main className="flex-1 grid grid-cols-[240px_320px_280px_1fr] gap-4 p-4 overflow-hidden">
+                {/* Column 1: Strategy Selection */}
+                <div className="bg-brand-surface rounded-lg overflow-y-auto">
                     {renderStrategySidebar()}
-                </aside>
-                <div className="bg-brand-surface overflow-y-auto">
+                </div>
+                
+                {/* Column 2: Config Panel */}
+                <div className="bg-brand-surface rounded-lg overflow-y-auto">
                     {renderConfigPanel()}
                 </div>
-                <aside className="border-l border-brand-border overflow-hidden">
-                    {renderTrainingSidebar()}
-                </aside>
+                
+                {/* Column 3: Training Queue */}
+                <TrainingQueue 
+                    onSelectJob={setSelectedQueueJobId}
+                    selectedJobId={selectedQueueJobId}
+                />
+                
+                {/* Column 4: Animated Progress */}
+                <div className="overflow-y-auto">
+                    <AnimatedProgress jobId={selectedQueueJobId} />
+                </div>
             </main>
         </div>
     );

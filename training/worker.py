@@ -19,8 +19,12 @@ Systemd:
 import os
 import sys
 import logging
+from pathlib import Path
 from redis import Redis
 from rq import Worker, Queue
+
+# Add parent directory to path so we can import training.rq_jobs
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Configure logging
 logging.basicConfig(
