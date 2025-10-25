@@ -200,6 +200,14 @@ function transformConfiguration(backendConfig: any): TrainedConfiguration {
         volatile: 0.34,
       },
     },
+    created_at: backendConfig.createdAt,
+    training_settings: backendConfig.metadataJson ? {
+      optimizer: backendConfig.metadataJson.optimizer,
+      n_iterations: backendConfig.metadataJson.n_iterations,
+      lookback_days: backendConfig.metadataJson.lookback_days,
+      model_version: backendConfig.modelVersion,
+      engine_hash: backendConfig.engineHash,
+    } : undefined,
     isActive: backendConfig.isActive || false,
   };
 }

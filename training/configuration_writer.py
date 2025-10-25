@@ -496,10 +496,15 @@ class ConfigurationWriter:
                     sharpe_ratio,
                     calmar_ratio,
                     sortino_ratio,
+                    model_version,
+                    engine_hash,
+                    runtime_env,
+                    discovery_date,
+                    metadata_json,
                     created_at,
                     updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
                 )
                 RETURNING id
             """
@@ -532,6 +537,11 @@ class ConfigurationWriter:
                 float(stats.get('sharpe_ratio', 0) or 0),  # sharpe_ratio
                 float(stats.get('calmar_ratio', 0) or 0),  # calmar_ratio
                 float(stats.get('sortino_ratio', 0) or 0),  # sortino_ratio
+                config_json['metadata'].get('model_version', '3.0.0'),  # model_version
+                config_json['metadata'].get('engine_hash', ''),  # engine_hash
+                config_json['metadata'].get('runtime_env', 'training_v2'),  # runtime_env
+                datetime.fromisoformat(config_json['metadata'].get('discovery_date', datetime.now(timezone.utc).isoformat())),  # discovery_date
+                json.dumps(convert_numpy_types(config_json['metadata'])),  # metadata_json
                 datetime.now(timezone.utc),  # created_at
                 datetime.now(timezone.utc)  # updated_at
             )

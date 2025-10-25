@@ -72,6 +72,12 @@ class ConfigurationResponse(BaseModel):
     performance_degradation: Optional[float]
     death_signal_count: Optional[int]
     
+    # Training metadata
+    model_version: Optional[str]
+    engine_hash: Optional[str]
+    runtime_env: Optional[str]
+    metadata_json: Optional[Dict[str, Any]]
+    
     # Timestamps
     created_at: datetime
     updated_at: datetime
@@ -166,6 +172,7 @@ async def list_configurations(
                 fill_rate, adverse_selection_score,
                 max_position_size, var_95,
                 months_since_discovery, performance_degradation, death_signal_count,
+                model_version, engine_hash, runtime_env, metadata_json,
                 created_at, updated_at, last_activated_at, last_deactivated_at
             FROM trained_configurations
             WHERE {where_clause}
@@ -206,6 +213,7 @@ async def get_configuration(configuration_id: str):
                 fill_rate, adverse_selection_score,
                 max_position_size, var_95,
                 months_since_discovery, performance_degradation, death_signal_count,
+                model_version, engine_hash, runtime_env, metadata_json,
                 created_at, updated_at, last_activated_at, last_deactivated_at
             FROM trained_configurations
             WHERE id = %s

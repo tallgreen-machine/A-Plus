@@ -348,5 +348,13 @@ export interface TrainedConfiguration {
       volatile: number;
     };
   };
+  created_at?: string; // ISO timestamp
+  training_settings?: {
+    optimizer: string;
+    n_iterations?: number;
+    lookback_days?: number;
+    model_version?: string;
+    engine_hash?: string;
+  };
   isActive?: boolean;
 }

@@ -7,7 +7,30 @@ interface TrainedAssetsProps {
     onClear: () => void;
     serverLatency: number;
     onActivateVisible: (visibleIds: string[]) => void;
+    onSelectConfig: (config: TrainedConfiguration) => void;
 }
+
+// Utility function to format relative time
+const formatRelativeTime = (isoTimestamp: string | undefined): string => {
+    if (!isoTimestamp) return 'Unknown';
+    
+    const now = new Date();
+    const past = new Date(isoTimestamp);
+    const diffMs = now.getTime() - past.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHr = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHr / 24);
+    
+    if (diffSec < 60) return 'Just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    if (diffHr < 24) return `${diffHr}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+    
+    return past.toLocaleDateString();
+};
 
 const LifecycleBadge: React.FC<{ stage: TrainedConfiguration['lifecycle_stage'] }> = ({ stage }) => {
     const config = {
@@ -21,14 +44,23 @@ const LifecycleBadge: React.FC<{ stage: TrainedConfiguration['lifecycle_stage'] 
     return <span className={`px-2 py-1 text-xs font-bold rounded-full ${color}`}>{stage}</span>;
 }
 
-const AssetCard: React.FC<{ asset: TrainedConfiguration }> = ({ asset }) => {
+const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> = ({ asset, onClick }) => {
     const isProfitable = asset.performance.net_profit > 0;
     return (
-        <div className={`bg-brand-surface border rounded-lg p-4 flex flex-col gap-3 animate-fadeIn transition-all hover:-translate-y-1 ${asset.isActive ? 'border-brand-primary ring-2 ring-brand-primary/50' : 'border-brand-border hover:border-brand-primary/50'}`}>
+        <div 
+            onClick={onClick}
+            className={`bg-brand-surface border rounded-lg p-4 flex flex-col gap-3 animate-fadeIn transition-all hover:-translate-y-1 cursor-pointer ${asset.isActive ? 'border-brand-primary ring-2 ring-brand-primary/50' : 'border-brand-border hover:border-brand-primary/50'}`}
+        >
             <header className="flex justify-between items-start">
                 <div>
                     <h3 className="font-bold text-brand-text-primary">{asset.pair}</h3>
                     <p className="text-xs text-brand-text-secondary">{asset.exchange} - {asset.timeframe}</p>
+                    <p className="text-xs text-brand-text-secondary mt-0.5">
+                        Trained {formatRelativeTime(asset.created_at)}
+                        {asset.training_settings?.optimizer && (
+                            <span className="ml-1">• {asset.training_settings.optimizer}</span>
+                        )}
+                    </p>
                 </div>
                 <LifecycleBadge stage={asset.lifecycle_stage} />
             </header>
@@ -59,13 +91,17 @@ const AssetCard: React.FC<{ asset: TrainedConfiguration }> = ({ asset }) => {
     );
 }
 
-const AssetListItem: React.FC<{ asset: TrainedConfiguration }> = ({ asset }) => {
+const AssetListItem: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> = ({ asset, onClick }) => {
     const isProfitable = asset.performance.net_profit > 0;
     return (
-        <div className={`grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-sm p-3 bg-brand-surface rounded-md border transition-colors ${asset.isActive ? 'border-brand-primary' : 'border-transparent hover:border-brand-border/50'}`}>
+        <div 
+            onClick={onClick}
+            className={`grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-sm p-3 bg-brand-surface rounded-md border transition-colors cursor-pointer ${asset.isActive ? 'border-brand-primary' : 'border-transparent hover:border-brand-border/50'}`}
+        >
             <div>
                 <p className="font-semibold text-brand-text-primary">{asset.pair}</p>
                 <p className="text-xs text-brand-text-secondary truncate">{asset.strategy_name}</p>
+                <p className="text-xs text-brand-text-secondary">{formatRelativeTime(asset.created_at)}</p>
             </div>
             <p className="text-xs text-brand-text-secondary">{asset.exchange}</p>
             <p className="text-xs text-brand-text-secondary">{asset.timeframe}</p>
@@ -73,13 +109,14 @@ const AssetListItem: React.FC<{ asset: TrainedConfiguration }> = ({ asset }) => 
             <p className={`font-mono font-semibold ${isProfitable ? 'text-brand-positive' : 'text-brand-negative'}`}>{asset.performance.net_profit.toFixed(2)}%</p>
             <p className="font-mono text-brand-text-primary">{asset.validation.sharpe_ratio.toFixed(2)}</p>
             <p className="text-xs text-brand-text-secondary">{asset.performance.sample_size}</p>
+            <p className="text-xs text-brand-text-secondary capitalize">{asset.training_settings?.optimizer || '-'}</p>
             <LifecycleBadge stage={asset.lifecycle_stage} />
         </div>
     );
 }
 
 
-export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, serverLatency, onActivateVisible }) => {
+export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, serverLatency, onActivateVisible, onSelectConfig }) => {
     const [selectedStages, setSelectedStages] = useState<TrainedConfiguration['lifecycle_stage'][]>([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -309,12 +346,12 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
                 ) : view === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                         {filteredAndSortedAssets.map(asset => (
-                            <AssetCard key={asset.id} asset={asset} />
+                            <AssetCard key={asset.id} asset={asset} onClick={() => onSelectConfig(asset)} />
                         ))}
                     </div>
                 ) : (
                     <div className="space-y-2">
-                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-xs p-3 text-brand-text-secondary font-semibold border-b border-brand-border">
+                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-xs p-3 text-brand-text-secondary font-semibold border-b border-brand-border">
                             <span>Pair / Strategy</span>
                             <span>Exchange</span>
                             <span>Timeframe</span>
@@ -322,10 +359,11 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
                             <span>Net Profit</span>
                             <span>Sharpe</span>
                             <span>Trades</span>
+                            <span>Optimizer</span>
                             <span>Stage</span>
                         </div>
                         {filteredAndSortedAssets.map(asset => (
-                            <AssetListItem key={asset.id} asset={asset} />
+                            <AssetListItem key={asset.id} asset={asset} onClick={() => onSelectConfig(asset)} />
                         ))}
                     </div>
                 )}

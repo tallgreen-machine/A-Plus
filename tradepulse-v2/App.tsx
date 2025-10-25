@@ -588,6 +588,7 @@ const App: React.FC = () => {
                     onClear={handleClearTrainedAssets} 
                     serverLatency={serverLatency} 
                     onActivateVisible={handleActivateVisibleConfigs}
+                    onSelectConfig={setSelectedConfig}
                 />;
             case 'strategyStudio':
                 return <StrategyStudio currentUser={currentUser} onTrainingComplete={handleTrainingComplete} />;
