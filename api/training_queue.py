@@ -445,6 +445,12 @@ async def append_training_log(job_id: int, log_entry: TrainingLogCreate):
             await conn.close()
             raise HTTPException(status_code=404, detail=f"Training job {job_id} not found")
         
+        # Ensure timestamp is timezone-aware
+        timestamp = log_entry.timestamp
+        if timestamp.tzinfo is None:
+            import pytz
+            timestamp = pytz.utc.localize(timestamp)
+        
         # Insert log entry
         log_id = await conn.fetchval(
             """
@@ -452,8 +458,8 @@ async def append_training_log(job_id: int, log_entry: TrainingLogCreate):
             VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             """,
-            uuid.UUID(job_id),
-            log_entry.timestamp,
+            job_id,
+            timestamp,
             log_entry.message,
             log_entry.progress,
             log_entry.log_level
@@ -467,6 +473,8 @@ async def append_training_log(job_id: int, log_entry: TrainingLogCreate):
         raise
     except Exception as e:
         log.error(f"Error appending log for job {job_id}: {e}")
+        import traceback
+        log.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to append log: {str(e)}")
 
 
