@@ -40,8 +40,8 @@ cd /workspaces/Trad
 # 1. Build frontend (if changes were made)
 cd tradepulse-v2 && npm run build && cd ..
 
-# 2. Deploy to production server (full path - works from any directory)
-SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash /workspaces/Trad/ops/scripts/deploy_to_server.sh
+# 2. Deploy to production server (use subshell to ensure correct working directory)
+(cd /workspaces/Trad && SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash ops/scripts/deploy_to_server.sh)
 
 # 3. Verify deployment
 curl http://138.68.245.159:8000/health
@@ -601,7 +601,8 @@ quantity = (100000 * 0.02) / abs(50000 - 48000) = 1.0 BTC
 
 cd ..
 
-SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh### OCO Order Management
+(cd /workspaces/Trad && SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash ops/scripts/deploy_to_server.sh)
+### OCO Order Management
 
 ```**Simultaneous stop-loss and take-profit placement:**
 
@@ -928,10 +929,9 @@ ssh root@138.68.245.159 "redis-cli ping"	3) Create Python virtual environments a
 
 ### Deployment
 
-1. Use standard deployment script with full path:
+1. Use standard deployment script (subshell ensures correct directory):
    ```bash
-   cd /workspaces/Trad
-   SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash /workspaces/Trad/ops/scripts/deploy_to_server.sh
+   (cd /workspaces/Trad && SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash ops/scripts/deploy_to_server.sh)
    ```
 2. Verify services after deployment
 3. Check logs for errors
