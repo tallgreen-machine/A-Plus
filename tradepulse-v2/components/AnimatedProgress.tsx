@@ -67,7 +67,7 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
       </div>
 
       {/* Current Progress Display */}
-      {currentProgress && currentProgress.status === 'running' && (
+      {currentProgress && currentProgress.status === 'running' && currentProgress.progress != null && (
         <div className="mb-4 p-3 bg-gray-900 rounded-lg border border-gray-800">
           {/* Progress Bar */}
           <div className="mb-3">
@@ -97,7 +97,7 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
                 </span>
               </div>
             )}
-            {currentProgress.current_reward !== undefined && (
+            {currentProgress.current_reward != null && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Reward:</span>
                 <span className={`font-mono ${currentProgress.current_reward >= 0 ? 'text-green-400' : 'text-red-400'}`}>
@@ -105,7 +105,7 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
                 </span>
               </div>
             )}
-            {currentProgress.current_loss !== undefined && (
+            {currentProgress.current_loss != null && (
               <div className="flex justify-between">
                 <span className="text-gray-500">Loss:</span>
                 <span className="text-yellow-400 font-mono">
