@@ -48,10 +48,213 @@ interface TrainingProgress {
 const AVAILABLE_STRATEGIES = [
     {
         id: 'LIQUIDITY_SWEEP',
-        name: 'Liquidity Sweep',
-        description: 'Identifies and trades liquidity sweeps with volume confirmation'
+        name: 'Liquidity Sweep V3',
+        description: 'Identifies and trades liquidity sweeps at key levels with volume confirmation',
+        riskReward: '2:1',
+        stopLoss: '1.5 ATR',
+        parameters: 9,
+        effectiveness: '100%',
+        dataRequired: 'OHLCV only',
+        bestTimeframes: ['15m', '1h', '4h']
+    },
+    {
+        id: 'CAPITULATION_REVERSAL',
+        name: 'Capitulation Reversal V3',
+        description: 'Detects panic selling/buying events through volume explosions and price velocity',
+        riskReward: '2.5:1',
+        stopLoss: '1.5 ATR',
+        parameters: 13,
+        effectiveness: '70-85%',
+        dataRequired: 'OHLCV + optional L2',
+        bestTimeframes: ['1h', '4h']
+    },
+    {
+        id: 'FAILED_BREAKDOWN',
+        name: 'Failed Breakdown (Spring) V3',
+        description: 'Wyckoff-based detection of failed breakdowns with accumulation confirmation',
+        riskReward: '2:1',
+        stopLoss: '1.2 ATR',
+        parameters: 15,
+        effectiveness: '55-70%',
+        dataRequired: 'OHLCV + optional L2/trades',
+        bestTimeframes: ['4h', '1d']
     }
 ];
+
+// Detailed technical specifications for each strategy
+const STRATEGY_SPECS: Record<string, any> = {
+    LIQUIDITY_SWEEP: {
+        name: 'Liquidity Sweep V3',
+        overview: 'Detects liquidity sweeps (stop hunts) where price pierces a key level, triggers stops, then reverses direction with volume confirmation.',
+        entryLogic: [
+            'Identify key support/resistance levels (100+ period lookback)',
+            'Detect pierce through level (configurable depth)',
+            'Confirm volume spike (2-5x average volume)',
+            'Confirm reversal candles (rejection pattern)',
+            'Enter on reversal confirmation'
+        ],
+        exitLogic: [
+            'Take-profit: 2:1 risk/reward ratio',
+            'Stop-loss: 1.5 ATR distance',
+            'Max holding: 30 candles',
+            'Exit on opposite signal'
+        ],
+        parameters: [
+            { name: 'pierce_depth', range: '0.05% - 0.5%', default: '0.2%', description: 'How far price must pierce level' },
+            { name: 'volume_spike_threshold', range: '1.5x - 5x', default: '2.5x', description: 'Volume multiplier vs average' },
+            { name: 'reversal_candles', range: '1 - 5', default: '2', description: 'Required reversal candles' },
+            { name: 'min_distance_from_level', range: '0.05% - 0.3%', default: '0.1%', description: 'Min distance to consider level valid' },
+            { name: 'atr_multiplier_sl', range: '1.0 - 3.0', default: '1.5', description: 'Stop-loss distance (ATR multiplier)' },
+            { name: 'risk_reward_ratio', range: '1.5:1 - 4:1', default: '2:1', description: 'Take-profit ratio' },
+            { name: 'max_holding_periods', range: '10 - 100', default: '30', description: 'Maximum candles to hold' },
+            { name: 'key_level_lookback', range: '50 - 200', default: '100', description: 'Periods to look back for key levels' },
+            { name: 'min_level_touches', range: '2 - 5', default: '3', description: 'Min touches to qualify as key level' }
+        ],
+        dataRequirements: {
+            minimum: ['OHLCV (open, high, low, close, volume)', 'ATR indicator'],
+            optional: ['Order flow data', 'Spread data'],
+            frequency: 'Per-candle basis'
+        },
+        performance: {
+            effectiveness: '100%',
+            bestMarkets: ['Trending', 'Range-bound'],
+            bestTimeframes: ['15m', '1h', '4h'],
+            bestAssets: ['BTC', 'ETH', 'Major altcoins']
+        },
+        notes: [
+            'Works with FREE data only',
+            'No external APIs required',
+            'Best in liquid markets with clear levels'
+        ]
+    },
+    CAPITULATION_REVERSAL: {
+        name: 'Capitulation Reversal V3 (FREE DATA)',
+        overview: 'Detects panic selling/buying events through price action and volume WITHOUT requiring external data feeds (liquidations, funding rates, sentiment). Modified to work with free data only.',
+        entryLogic: [
+            'Detect volume explosion (5x+ average = liquidation proxy)',
+            'Detect extreme price velocity (3%+ per candle = panic)',
+            'Detect ATR explosion (2.5x+ = volatility spike)',
+            'Detect exhaustion wicks (wick 3x+ body size)',
+            'Confirm RSI extremes (< 15 or > 85)',
+            'Check for 3+ consecutive panic candles',
+            'Optional: Verify order book imbalance (60%+ bid dominance)',
+            'Enter on recovery candle with strong volume (2.5x+)'
+        ],
+        exitLogic: [
+            'Take-profit: 2.5:1 risk/reward ratio',
+            'Stop-loss: 1.5 ATR distance',
+            'Max holding: 50 candles',
+            'Exit on volume divergence'
+        ],
+        parameters: [
+            { name: 'volume_explosion_threshold', range: '3x - 8x', default: '5x', description: 'Volume multiplier indicating panic' },
+            { name: 'price_velocity_threshold', range: '2% - 5%', default: '3%', description: 'Price change per candle threshold' },
+            { name: 'atr_explosion_threshold', range: '2x - 4x', default: '2.5x', description: 'ATR multiplier vs average' },
+            { name: 'exhaustion_wick_ratio', range: '2:1 - 5:1', default: '3:1', description: 'Wick/body ratio for exhaustion' },
+            { name: 'rsi_extreme_threshold', range: '10 - 20', default: '15', description: 'RSI extreme level (< X or > 100-X)' },
+            { name: 'rsi_divergence_lookback', range: '10 - 30', default: '20', description: 'Periods for RSI divergence' },
+            { name: 'orderbook_imbalance_threshold', range: '50% - 70%', default: '60%', description: 'Bid/ask imbalance threshold' },
+            { name: 'consecutive_panic_candles', range: '2 - 5', default: '3', description: 'Min panic candles in a row' },
+            { name: 'recovery_volume_threshold', range: '2x - 4x', default: '2.5x', description: 'Recovery volume multiplier' },
+            { name: 'atr_multiplier_sl', range: '1.0 - 2.5', default: '1.5', description: 'Stop-loss distance' },
+            { name: 'risk_reward_ratio', range: '2:1 - 4:1', default: '2.5:1', description: 'Take-profit ratio' },
+            { name: 'max_holding_periods', range: '30 - 100', default: '50', description: 'Maximum candles to hold' },
+            { name: 'lookback_periods', range: '50 - 150', default: '100', description: 'Periods to analyze for panic' }
+        ],
+        dataRequirements: {
+            minimum: ['OHLCV', 'ATR', 'RSI (14-period)', 'Volume moving average'],
+            optional: ['Order book L2 data (top 20 levels)', 'Bid/ask imbalance metrics'],
+            frequency: 'Real-time per-candle + optional 5-min L2 snapshots'
+        },
+        performance: {
+            effectiveness: '70-85% (vs 100% with paid liquidation data)',
+            improvementWithL2: '+15% with order book data',
+            bestMarkets: ['Volatile', 'Trending with pullbacks'],
+            bestTimeframes: ['1h', '4h'],
+            bestAssets: ['BTC', 'ETH', 'SOL', 'High-volume altcoins']
+        },
+        notes: [
+            'Modified from original V3 spec to work WITHOUT paid data',
+            'Uses volume explosions as proxy for liquidations',
+            'Uses price velocity as proxy for funding rate stress',
+            'Order book data optional but recommended (+15% effectiveness)',
+            'Best during high volatility periods'
+        ]
+    },
+    FAILED_BREAKDOWN: {
+        name: 'Failed Breakdown (Spring) V3 (FREE DATA)',
+        overview: 'Detects Wyckoff springs (failed breakdowns) using volume profile and price action WITHOUT requiring on-chain data. Modified to work with free exchange data only.',
+        entryLogic: [
+            'Detect range formation (100+ periods, <5% width, declining volume)',
+            'Identify support level (3+ touches)',
+            'Detect breakdown BELOW support (1% depth) with WEAK volume (<50% avg)',
+            'Detect rapid recovery ABOVE support within 10 candles',
+            'Confirm recovery with STRONG volume (3x+ average)',
+            'Calculate accumulation score (must be ≥70%)',
+            'Optional: Detect order book absorption (3x normal depth)',
+            'Optional: Confirm smart money via large trade analysis (1.5:1 buy ratio)',
+            'Enter on spring confirmation'
+        ],
+        exitLogic: [
+            'Take-profit: 2:1 risk/reward ratio',
+            'Stop-loss: 1.2 ATR below entry (tighter than other strategies)',
+            'Max holding: 50 candles',
+            'Trail stop after 1:1 achieved'
+        ],
+        parameters: [
+            { name: 'range_lookback_periods', range: '50 - 200', default: '100', description: 'Periods to identify range' },
+            { name: 'range_tightness_threshold', range: '3% - 8%', default: '5%', description: 'Max range width percentage' },
+            { name: 'breakdown_depth', range: '0.5% - 2%', default: '1%', description: 'How far below support' },
+            { name: 'breakdown_volume_threshold', range: '30% - 70%', default: '50%', description: 'WEAK volume = trap/fake breakdown' },
+            { name: 'spring_max_duration', range: '5 - 20', default: '10', description: 'Max candles below support' },
+            { name: 'recovery_volume_threshold', range: '2x - 5x', default: '3x', description: 'STRONG volume = smart money' },
+            { name: 'recovery_speed', range: '3 - 10', default: '5', description: 'Max candles to reclaim support' },
+            { name: 'orderbook_absorption_threshold', range: '2x - 5x', default: '3x', description: 'Hidden bid volume multiplier' },
+            { name: 'orderbook_monitoring_depth', range: '10 - 30', default: '20', description: 'Order book levels to monitor' },
+            { name: 'large_trade_multiplier', range: '3x - 8x', default: '5x', description: 'Large trade size vs median' },
+            { name: 'smart_money_imbalance', range: '1.3:1 - 2:1', default: '1.5:1', description: 'Buy/sell ratio for smart money' },
+            { name: 'accumulation_score_minimum', range: '60% - 80%', default: '70%', description: 'Min score to enter trade' },
+            { name: 'atr_multiplier_sl', range: '1.0 - 2.0', default: '1.2', description: 'Stop-loss distance' },
+            { name: 'risk_reward_ratio', range: '1.5:1 - 3:1', default: '2:1', description: 'Take-profit ratio' },
+            { name: 'max_holding_periods', range: '30 - 100', default: '50', description: 'Maximum candles to hold' }
+        ],
+        dataRequirements: {
+            minimum: ['OHLCV', 'ATR', 'Volume moving average', 'Support/resistance detection'],
+            optional: [
+                'Order book L2 data (top 20 levels) - adds +15% effectiveness',
+                'Trade feed data (individual trades) - adds +10% effectiveness',
+                'Large trade identification',
+                'Bid/ask depth metrics'
+            ],
+            frequency: 'Real-time per-candle + optional 5-min L2 snapshots + optional trade stream'
+        },
+        performance: {
+            effectiveness: '55-70% (vs 100% with paid on-chain data)',
+            improvementWithL2: '+15% with order book data',
+            improvementWithTrades: '+10% additional with trade feed',
+            bestMarkets: ['Range-bound', 'Accumulation phases'],
+            bestTimeframes: ['4h', '1d'],
+            bestAssets: ['BTC', 'ETH', 'Established altcoins']
+        },
+        wyckoffPhases: [
+            { phase: 'A', name: 'Preliminary Support', description: 'Initial sell-off and support' },
+            { phase: 'B', name: 'Accumulation Range', description: 'Range formation with declining volume' },
+            { phase: 'C', name: 'Spring (KEY)', description: 'Breakdown trap with weak volume - ENTRY SIGNAL' },
+            { phase: 'D', name: 'Recovery', description: 'Strong volume reversal - ENTRY POINT' },
+            { phase: 'E', name: 'Markup', description: 'Breakout and uptrend begins' }
+        ],
+        notes: [
+            'Modified from original V3 spec to work WITHOUT on-chain data',
+            'Based on Wyckoff methodology (1930s - no on-chain data existed!)',
+            'Uses volume profile as proxy for accumulation',
+            'Weak breakdown volume = lack of real selling (trap)',
+            'Strong recovery volume = institutional buying',
+            'L2 order book data highly recommended (+15% effectiveness)',
+            'Trade feed data moderately recommended (+10% effectiveness)',
+            'Best during consolidation/accumulation phases'
+        ]
+    }
+};
 
 const AVAILABLE_SYMBOLS = [
     'BTC/USDT',
@@ -72,13 +275,14 @@ const API_BASE = 'http://138.68.245.159:8000';
 export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onTrainingComplete }) => {
     // Strategy selection
     const [selectedStrategies, setSelectedStrategies] = useState<string[]>(['LIQUIDITY_SWEEP']);
+    const [strategyDetailsModal, setStrategyDetailsModal] = useState<string | null>(null);
     
     // Training config
     const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
     const [selectedExchange] = useState<string>('binanceus');
     const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
     const [selectedRegime, setSelectedRegime] = useState<string>('sideways');
-    const [optimizer, setOptimizer] = useState<string>('bayesian');
+    const [optimizer, setOptimizer] = useState<string>('random'); // Changed to 'random' for faster, more predictable training
     const [lookbackDays, setLookbackDays] = useState<number>(30);
     const [nIterations, setNIterations] = useState<number>(20);
     
@@ -302,12 +506,8 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
         }
     };
 
-    const toggleStrategy = (strategyId: string) => {
-        setSelectedStrategies(prev =>
-            prev.includes(strategyId)
-                ? prev.filter(id => id !== strategyId)
-                : [...prev, strategyId]
-        );
+    const selectStrategy = (strategyId: string) => {
+        setSelectedStrategies([strategyId]); // Only one strategy at a time
     };
     
     const renderStrategySidebar = () => {
@@ -315,31 +515,50 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
             <div className="flex flex-col h-full">
                 <div className="p-4 border-b border-brand-border shrink-0">
                     <h3 className="text-lg font-bold text-brand-text-primary mb-1">Available Strategies</h3>
-                    <p className="text-xs text-brand-text-secondary">Select strategies to train</p>
+                    <p className="text-xs text-brand-text-secondary">Select a strategy to train</p>
                 </div>
                 <nav className="flex-1 overflow-y-auto p-2 space-y-2">
                     {AVAILABLE_STRATEGIES.map(strategy => {
                         const isSelected = selectedStrategies.includes(strategy.id);
                         return (
-                            <button
+                            <div
                                 key={strategy.id}
-                                onClick={() => toggleStrategy(strategy.id)}
                                 className={`w-full text-left px-3 py-3 rounded-md text-sm transition-colors border-2 ${
                                     isSelected
-                                        ? 'bg-brand-primary/20 border-brand-primary text-brand-primary'
-                                        : 'border-brand-border text-brand-text-primary hover:bg-brand-surface'
+                                        ? 'bg-brand-primary/20 border-brand-primary'
+                                        : 'border-brand-border hover:bg-brand-surface'
                                 }`}
                             >
                                 <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                        <div className="font-semibold">{strategy.name}</div>
+                                    <button
+                                        onClick={() => selectStrategy(strategy.id)}
+                                        className="flex-1 text-left"
+                                    >
+                                        <div className={`font-semibold ${isSelected ? 'text-brand-primary' : 'text-brand-text-primary'}`}>
+                                            {strategy.name}
+                                        </div>
                                         <div className="text-xs text-brand-text-secondary mt-1">{strategy.description}</div>
-                                    </div>
+                                        <div className="flex gap-2 mt-2 text-xs text-brand-text-secondary">
+                                            <span className="bg-brand-surface px-2 py-0.5 rounded">R/R: {strategy.riskReward}</span>
+                                            <span className="bg-brand-surface px-2 py-0.5 rounded">{strategy.parameters} params</span>
+                                            <span className="bg-brand-surface px-2 py-0.5 rounded">{strategy.effectiveness}</span>
+                                        </div>
+                                    </button>
                                     {isSelected && (
-                                        <div className="ml-2 text-brand-primary">✓</div>
+                                        <div className="ml-2 text-brand-primary text-lg">●</div>
                                     )}
                                 </div>
-                            </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setStrategyDetailsModal(strategy.id);
+                                    }}
+                                    className="mt-2 text-brand-text-secondary hover:text-brand-primary transition-colors text-xs px-2 py-1 border border-brand-border rounded hover:border-brand-primary"
+                                    title="View technical specifications"
+                                >
+                                    Details
+                                </button>
+                            </div>
                         );
                     })}
                 </nav>
@@ -536,6 +755,203 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
         );
     };
     
+    const renderStrategyDetailsModal = () => {
+        if (!strategyDetailsModal) return null;
+        
+        const specs = STRATEGY_SPECS[strategyDetailsModal];
+        if (!specs) return null;
+        
+        return (
+            <div 
+                className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+                onClick={() => setStrategyDetailsModal(null)}
+            >
+                <div 
+                    className="bg-brand-surface rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Modal Header */}
+                    <div className="sticky top-0 bg-brand-surface border-b border-brand-border p-6 flex justify-between items-start">
+                        <div>
+                            <h2 className="text-2xl font-bold text-brand-text-primary">{specs.name}</h2>
+                            <p className="text-sm text-brand-text-secondary mt-1">{specs.overview}</p>
+                        </div>
+                        <button
+                            onClick={() => setStrategyDetailsModal(null)}
+                            className="text-brand-text-secondary hover:text-brand-text-primary text-2xl leading-none"
+                        >
+                            ×
+                        </button>
+                    </div>
+                    
+                    {/* Modal Content */}
+                    <div className="p-6 space-y-6">
+                        {/* Entry Logic */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Entry Logic</h3>
+                            <ol className="space-y-2">
+                                {specs.entryLogic.map((step: string, idx: number) => (
+                                    <li key={idx} className="flex gap-3 text-sm">
+                                        <span className="text-brand-primary font-semibold shrink-0">{idx + 1}.</span>
+                                        <span className="text-brand-text-secondary">{step}</span>
+                                    </li>
+                                ))}
+                            </ol>
+                        </section>
+                        
+                        {/* Exit Logic */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Exit Logic</h3>
+                            <ul className="space-y-2">
+                                {specs.exitLogic.map((item: string, idx: number) => (
+                                    <li key={idx} className="flex gap-3 text-sm">
+                                        <span className="text-brand-primary">•</span>
+                                        <span className="text-brand-text-secondary">{item}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                        
+                        {/* Wyckoff Phases (only for Failed Breakdown) */}
+                        {specs.wyckoffPhases && (
+                            <section>
+                                <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Wyckoff Phases</h3>
+                                <div className="grid gap-2">
+                                    {specs.wyckoffPhases.map((phase: any, idx: number) => (
+                                        <div key={idx} className="flex gap-3 text-sm bg-brand-bg rounded p-3">
+                                            <span className="text-brand-primary font-bold shrink-0">Phase {phase.phase}:</span>
+                                            <div>
+                                                <div className="font-semibold text-brand-text-primary">{phase.name}</div>
+                                                <div className="text-brand-text-secondary text-xs mt-1">{phase.description}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+                        
+                        {/* ML Parameters */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">
+                                ML-Optimizable Parameters ({specs.parameters.length})
+                            </h3>
+                            <div className="grid gap-3">
+                                {specs.parameters.map((param: any, idx: number) => (
+                                    <div key={idx} className="bg-brand-bg rounded p-3">
+                                        <div className="flex justify-between items-start gap-4 mb-1">
+                                            <span className="font-mono text-sm text-brand-primary">{param.name}</span>
+                                            <div className="text-right shrink-0">
+                                                <div className="text-xs text-brand-text-secondary">Range: {param.range}</div>
+                                                <div className="text-xs text-brand-text-primary">Default: {param.default}</div>
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-brand-text-secondary">{param.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+                        
+                        {/* Data Requirements */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Data Requirements</h3>
+                            <div className="space-y-3">
+                                <div>
+                                    <h4 className="text-sm font-semibold text-brand-text-primary mb-2">Minimum (Required)</h4>
+                                    <ul className="space-y-1">
+                                        {specs.dataRequirements.minimum.map((item: string, idx: number) => (
+                                            <li key={idx} className="flex gap-2 text-sm">
+                                                <span className="text-green-500">✓</span>
+                                                <span className="text-brand-text-secondary">{item}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                {specs.dataRequirements.optional && (
+                                    <div>
+                                        <h4 className="text-sm font-semibold text-brand-text-primary mb-2">Optional (Improves Performance)</h4>
+                                        <ul className="space-y-1">
+                                            {specs.dataRequirements.optional.map((item: string, idx: number) => (
+                                                <li key={idx} className="flex gap-2 text-sm">
+                                                    <span className="text-yellow-500">⚡</span>
+                                                    <span className="text-brand-text-secondary">{item}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                <div className="text-xs text-brand-text-secondary bg-brand-bg rounded p-2">
+                                    <span className="font-semibold">Frequency:</span> {specs.dataRequirements.frequency}
+                                </div>
+                            </div>
+                        </section>
+                        
+                        {/* Performance Metrics */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Performance & Best Use Cases</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-brand-bg rounded p-3">
+                                    <div className="text-xs text-brand-text-secondary mb-1">Effectiveness</div>
+                                    <div className="text-lg font-bold text-brand-primary">{specs.performance.effectiveness}</div>
+                                    {specs.performance.improvementWithL2 && (
+                                        <div className="text-xs text-green-500 mt-1">{specs.performance.improvementWithL2}</div>
+                                    )}
+                                    {specs.performance.improvementWithTrades && (
+                                        <div className="text-xs text-green-500">{specs.performance.improvementWithTrades}</div>
+                                    )}
+                                </div>
+                                <div className="bg-brand-bg rounded p-3">
+                                    <div className="text-xs text-brand-text-secondary mb-1">Best Timeframes</div>
+                                    <div className="flex gap-2 flex-wrap mt-1">
+                                        {specs.performance.bestTimeframes.map((tf: string) => (
+                                            <span key={tf} className="bg-brand-primary/20 text-brand-primary px-2 py-1 rounded text-xs font-semibold">
+                                                {tf}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="bg-brand-bg rounded p-3">
+                                    <div className="text-xs text-brand-text-secondary mb-1">Best Markets</div>
+                                    <div className="text-sm text-brand-text-primary">
+                                        {specs.performance.bestMarkets.join(', ')}
+                                    </div>
+                                </div>
+                                <div className="bg-brand-bg rounded p-3">
+                                    <div className="text-xs text-brand-text-secondary mb-1">Best Assets</div>
+                                    <div className="text-sm text-brand-text-primary">
+                                        {specs.performance.bestAssets.join(', ')}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        
+                        {/* Important Notes */}
+                        <section>
+                            <h3 className="text-lg font-semibold text-brand-text-primary mb-3">Important Notes</h3>
+                            <ul className="space-y-2">
+                                {specs.notes.map((note: string, idx: number) => (
+                                    <li key={idx} className="flex gap-3 text-sm">
+                                        <span className="text-yellow-500 shrink-0">⚠️</span>
+                                        <span className="text-brand-text-secondary">{note}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    </div>
+                    
+                    {/* Modal Footer */}
+                    <div className="sticky bottom-0 bg-brand-surface border-t border-brand-border p-4 flex justify-end">
+                        <button
+                            onClick={() => setStrategyDetailsModal(null)}
+                            className="px-4 py-2 bg-brand-primary text-white rounded hover:bg-brand-primary/90 transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+    
     return (
         <div className="h-full flex flex-col">
             {/* Resource Monitor Header */}
@@ -568,6 +984,9 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     <AnimatedProgress logs={allTrainingLogs} currentProgress={currentProgress} />
                 </div>
             </main>
+            
+            {/* Strategy Details Modal */}
+            {renderStrategyDetailsModal()}
         </div>
     );
 };

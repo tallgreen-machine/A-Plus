@@ -53,6 +53,80 @@ def get_training_queue() -> Queue:
     redis_conn = get_redis_connection()
     return Queue('training', connection=redis_conn)
 
+# ===== Cleanup Utilities =====
+
+async def cleanup_orphaned_training_jobs(conn: asyncpg.Connection, redis_conn: Optional[Redis] = None):
+    """
+    Clean up orphaned training jobs (jobs stuck in 'running' but not actually executing).
+    
+    This runs automatically after job cancellation to ensure worker is ready for next job.
+    """
+    if redis_conn is None:
+        redis_conn = get_redis_connection()
+    
+    # Find all running jobs
+    running_jobs = await conn.fetch(
+        "SELECT id, rq_job_id FROM training_jobs WHERE status = 'running'"
+    )
+    
+    if not running_jobs:
+        return
+    
+    for job_row in running_jobs:
+        job_id = job_row['id']
+        rq_job_id = job_row['rq_job_id']
+        
+        if not rq_job_id:
+            # No RQ job ID - orphaned
+            await conn.execute(
+                """
+                UPDATE training_jobs 
+                SET status = 'failed', 
+                    error_message = 'Orphaned: No RQ job ID',
+                    completed_at = NOW()
+                WHERE id = $1
+                """,
+                job_id
+            )
+            log.info(f"Cleaned up orphaned job {job_id} (no RQ job ID)")
+            continue
+        
+        # Check if RQ job is actually running
+        try:
+            rq_job = Job.fetch(rq_job_id, connection=redis_conn)
+            rq_status = rq_job.get_status()
+            
+            # If RQ job is not running, sync database
+            if rq_status in ('finished', 'failed', 'canceled', 'stopped'):
+                new_status = 'completed' if rq_status == 'finished' else 'failed'
+                await conn.execute(
+                    """
+                    UPDATE training_jobs 
+                    SET status = $2, 
+                        error_message = $3,
+                        completed_at = NOW()
+                    WHERE id = $1
+                    """,
+                    job_id,
+                    new_status,
+                    f"Synced from RQ status: {rq_status}"
+                )
+                log.info(f"Synced orphaned job {job_id} to status '{new_status}'")
+        
+        except Exception as e:
+            # RQ job not found - orphaned
+            await conn.execute(
+                """
+                UPDATE training_jobs 
+                SET status = 'failed', 
+                    error_message = 'Orphaned: RQ job not found',
+                    completed_at = NOW()
+                WHERE id = $1
+                """,
+                job_id
+            )
+            log.info(f"Cleaned up orphaned job {job_id} (RQ job not found)")
+
 # ===== Request/Response Models =====
 
 class TrainingJobCreate(BaseModel):
@@ -245,9 +319,10 @@ async def list_training_queue():
 @router.delete("/{job_id}")
 async def cancel_training_job(job_id: str):
     """
-    Cancel or remove training job
+    Cancel or remove training job with automatic cleanup
     - Pending jobs: removed from queue
     - Running jobs: cancelled and marked as cancelled
+    - Automatically kills worker process and cleans up orphaned state
     """
     try:
         conn = await asyncpg.connect(get_db_url())
@@ -266,16 +341,29 @@ async def cancel_training_job(job_id: str):
             raise HTTPException(status_code=404, detail="Job not found")
         
         # Cancel RQ job if exists
+        cancelled_rq = False
         if job['rq_job_id']:
             try:
                 redis_conn = get_redis_connection()
                 rq_job = Job.fetch(job['rq_job_id'], connection=redis_conn)
+                
+                # Cancel the job
                 rq_job.cancel()
+                cancelled_rq = True
                 log.info(f"Cancelled RQ job {job['rq_job_id']}")
+                
+                # Also try to kill the worker process if it's still running
+                try:
+                    # Send kill signal - worker should handle gracefully
+                    rq_job.kill()
+                    log.info(f"Killed RQ job worker process for {job['rq_job_id']}")
+                except Exception as kill_error:
+                    log.debug(f"Could not kill worker process (may have already stopped): {kill_error}")
+                
             except Exception as e:
-                log.warning(f"Failed to cancel RQ job: {e}")
+                log.warning(f"Failed to cancel RQ job {job['rq_job_id']}: {e}")
         
-        # Update database
+        # Update database based on status
         if job['status'] == 'pending':
             # Remove pending jobs completely
             await conn.execute(
@@ -283,21 +371,39 @@ async def cancel_training_job(job_id: str):
                 job_id_int
             )
             log.info(f"Removed pending job {job_id}")
+            message = f"Pending job {job_id} removed from queue"
         else:
-            # Mark running jobs as cancelled
+            # Mark running/other jobs as cancelled
             await conn.execute(
                 """
                 UPDATE training_jobs 
-                SET status = 'cancelled', completed_at = NOW()
+                SET status = 'cancelled', 
+                    completed_at = NOW(),
+                    error_message = CASE 
+                        WHEN error_message IS NULL THEN 'Cancelled by user'
+                        ELSE error_message || ' (cancelled by user)'
+                    END
                 WHERE id = $1
                 """,
                 job_id_int
             )
-            log.info(f"Cancelled running job {job_id}")
+            log.info(f"Cancelled job {job_id} (was {job['status']})")
+            message = f"Job {job_id} cancelled successfully"
+        
+        # Run cleanup check to handle any orphaned state
+        # This ensures the worker is ready for next job
+        try:
+            await cleanup_orphaned_training_jobs(conn, redis_conn if 'redis_conn' in locals() else None)
+        except Exception as cleanup_error:
+            log.warning(f"Post-cancellation cleanup warning: {cleanup_error}")
         
         await conn.close()
         
-        return {"success": True, "message": f"Job {job_id} cancelled"}
+        return {
+            "success": True, 
+            "message": message,
+            "rq_cancelled": cancelled_rq
+        }
         
     except HTTPException:
         raise
