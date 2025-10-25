@@ -1,206 +1,168 @@
-# TradePulse IQ - A+ Precision Trading Platform# TradePulse IQ - A+ Precision Trading Platform
+# TradePulse IQ - A+ Precision Trading Platform
 
+**Precision-first trading system combining A-Plus financial strategies with ML parameter optimization for maximum confluence and minimal noise.**
 
+> **V2 Dashboard Now Live!** Complete terminology refactor: Strategy→Configuration→Variable→Parameter hierarchy. Real database integration with `trained_configurations` table. See [GLOSSARY.md](./GLOSSARY.md) for terminology reference.
 
-**Precision-first trading system combining A-Plus financial strategies with ML parameter optimization for maximum confluence and minimal noise.****Precision-first trading system combining A-Plus financial strategies with ML parameter optimization for maximum confluence and minimal noise.**
+## 🎯 Core Philosophy: "Patience and Precision"
 
+**Quality over quantity** - We only trade high-confluence setups where multiple A+ conditions align perfectly. Our ML system doesn't generate signals; it optimizes the A+ strategy parameters for each asset to maximize precision.
 
+### Key Architectural Insight
 
-> **V2 Dashboard Now Live!** Complete terminology refactor: Strategy→Configuration→Variable→Parameter hierarchy. Real database integration with `trained_configurations` table. See [GLOSSARY.md](./GLOSSARY.md) for terminology reference.> **V2 Dashboard Now Live!** Complete terminology refactor: Strategy→Configuration→Variable→Parameter hierarchy. Real database integration with `trained_configurations` table. See [GLOSSARY.md](./GLOSSARY.md) for terminology reference.
+> **"The ML system essentially creates custom-tuned versions of each A+ setup for every traded asset"**
 
+- **A+ Strategies**: Provide the core trading logic and setup identification
+- **ML Training**: Optimizes thresholds, timeframes, and parameters for each strategy per asset/exchange pair  
+- **Execution**: Only trades when ML-optimized A+ conditions reach maximum confluence
 
+---
 
-## 🎯 Core Philosophy: "Patience and Precision"## 🎯 Core Philosophy: "Patience and Precision"
+## 🚀 Production Deployment
 
+**Live Server**: `138.68.245.159` - TradePulse IQ Dashboard & API
 
+- **Dashboard**: http://138.68.245.159:8000 (React frontend with real-time backend connection)
+- **API Docs**: http://138.68.245.159:8000/docs (30+ enhanced endpoints)
+- **Database**: PostgreSQL with pgvector on localhost:5432
+- **SSH Access**: `ssh root@138.68.245.159`
 
-**Quality over quantity** - We only trade high-confluence setups where multiple A+ conditions align perfectly. Our ML system doesn't generate signals; it optimizes the A+ strategy parameters for each asset to maximize precision.**Quality over quantity** - We only trade high-confluence setups where multiple A+ conditions align perfectly. Our ML system doesn't generate signals; it optimizes the A+ strategy parameters for each asset to maximize precision.
+📚 **Complete guides**: 
+- [DEPLOYMENT_GUIDE.md](./docs/DEPLOYMENT_GUIDE.md) - Application deployment
+- [SCHEMA_MANAGEMENT.md](./docs/SCHEMA_MANAGEMENT.md) - Database schema management
 
-
-
-### Key Architectural Insight### Key Architectural Insight
-
-> **"The ML system essentially creates custom-tuned versions of each A+ setup for every traded asset"**> **"The ML system essentially creates custom-tuned versions of each A+ setup for every traded asset"**
-
-
-
-- **A+ Strategies**: Provide the core trading logic and setup identification- **A+ Strategies**: Provide the core trading logic and setup identification
-
-- **ML Training**: Optimizes thresholds, timeframes, and parameters for each strategy per asset/exchange pair  - **ML Training**: Optimizes thresholds, timeframes, and parameters for each strategy per asset/exchange pair  
-
-- **Execution**: Only trades when ML-optimized A+ conditions reach maximum confluence- **Execution**: Only trades when ML-optimized A+ conditions reach maximum confluence
-
-
-
----## 🚀 Production Deployment
-
-
-
-## 🚀 Quick Start**Live Server**: `138.68.245.159` - TradePulse IQ Dashboard & API
-
-
-
-### Production Server```bash
-
-- **IP**: `138.68.245.159`# Deploy to production server
-
-- **Dashboard**: http://138.68.245.159:8000SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
-
-- **API Docs**: http://138.68.245.159:8000/docs
-
-- **SSH Access**: `ssh root@138.68.245.159`# Sync database schema
-
-./ops/scripts/sync_schema.sh --dry-run  # Preview changes
-
-### Deploy Application./ops/scripts/sync_schema.sh            # Apply changes
+### Deploy Application
 
 ```bash
+# From project root directory (/workspaces/Trad)
+cd /workspaces/Trad
 
-# Standard deployment (code + services)# Quick access commands
+# 1. Build frontend (if changes were made)
+cd tradepulse-v2 && npm run build && cd ..
 
-SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh./ops/scripts/server_info.sh
+# 2. Deploy to production server (full path - works from any directory)
+SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash /workspaces/Trad/ops/scripts/deploy_to_server.sh
 
+# 3. Verify deployment
+curl http://138.68.245.159:8000/health
 
-
-# Verify deployment# Verify deployment
-
-curl http://138.68.245.159:8000/healthcurl http://138.68.245.159:8000/health
-
+# 4. Check service status
+ssh root@138.68.245.159 "systemctl status trad-api.service trad-worker.service"
 ```
-
-# Check service status
-
-ssh root@138.68.245.159 "systemctl status trad-api.service trad-worker.service"- **Dashboard**: http://138.68.245.159:8000 (React frontend with real-time backend connection)
-
-```- **API Docs**: http://138.68.245.159:8000/docs (30+ enhanced endpoints)
-
-- **Database**: PostgreSQL with pgvector on localhost:5432
 
 ### Database Management
 
-```bash📚 **Complete guides**: 
+```bash
+# Sync database schema (from project root)
+cd /workspaces/Trad
 
-# Connect to production database (from server)- [DEPLOYMENT_GUIDE.md](./docs/DEPLOYMENT_GUIDE.md) - Application deployment
+# Preview changes (dry-run)
+bash /workspaces/Trad/ops/scripts/sync_schema.sh --dry-run
 
-ssh root@138.68.245.159- [SCHEMA_MANAGEMENT.md](./docs/SCHEMA_MANAGEMENT.md) - Database schema management
+# Apply changes
+bash /workspaces/Trad/ops/scripts/sync_schema.sh
 
-source /etc/trad/trad.env
-
-PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME"## 🏗️ System Architecture
-
-
-
-# Apply schema changes### 1. A+ Strategy Foundation
-
-./ops/scripts/sync_schema.sh --dry-run  # Preview changes**Core trading strategies based on exact A-Plus financial logic:**
-
-./ops/scripts/sync_schema.sh            # Apply changes
-
-- **HTF Sweep**: 1h→5m liquidity sweep + market structure shift confirmation
-
-# Run migration- **Volume Breakout**: ATR-based consolidation + volume spike confirmation  
-
-scp sql/migrations/011_migration.sql root@138.68.245.159:/srv/trad/sql/migrations/- **Divergence Capitulation**: Trend context + bullish divergence + volume confirmation
-
-ssh root@138.68.245.159 "sudo -u postgres psql -d trad -f /srv/trad/sql/migrations/011_migration.sql"
-
-```### 2. ML Parameter Optimization Engine
-
-**Multi-dimensional training system that creates optimized strategy variants:**
+# Apply specific migration
+scp sql/013_add_metadata_json_to_trained_configurations.sql root@138.68.245.159:/srv/trad/sql/
+ssh root@138.68.245.159 "sudo -u postgres psql -d trad -f /srv/trad/sql/013_add_metadata_json_to_trained_configurations.sql"
+```
 
 ### Database Connection Guidelines
 
+**Always use these methods for database access:**
+
+1. **From Server (Recommended)**:
+   ```bash
+   ssh root@138.68.245.159
+   source /etc/trad/trad.env
+   PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME"
+   ```
+
+2. **For Migrations (Use postgres user)**:
+   ```bash
+   ssh root@138.68.245.159 "sudo -u postgres psql -d trad -f /srv/trad/sql/migrations/XXX_migration.sql"
+   ```
+
+3. **Quick Commands**:
+   ```bash
+   # Server info and status
+   bash /workspaces/Trad/ops/scripts/server_info.sh
+   
+   # Health check
+   curl http://138.68.245.159:8000/health
+   ```
+
+## 🏗️ System Architecture
+
+### 1. A+ Strategy Foundation
+
+**Core trading strategies based on exact A-Plus financial logic:**
+
+- **HTF Sweep**: 1h→5m liquidity sweep + market structure shift confirmation
+- **Volume Breakout**: ATR-based consolidation + volume spike confirmation  
+- **Divergence Capitulation**: Trend context + bullish divergence + volume confirmation
+
+### 2. ML Parameter Optimization Engine
+
+**Multi-dimensional training system that creates optimized strategy variants:**
+
+```
+Training Dimensions:
+├── Symbol/Exchange Pairs (BTC/USDT on Binance, ETH/USDT on Coinbase, etc.)
+├── Market Regimes (Bull, Bear, Sideways)
+├── Timeframes (1m, 5m, 15m, 1h, 4h, 1d)
+└── Strategy Parameters (ATR periods, volume thresholds, divergence sensitivity)
+
+Result: 54 unique combinations per asset = Custom-tuned A+ setups
 ```
 
-**Always use these methods for database access:**Training Dimensions:
+**Training Queue System** (NEW):
+- Persistent job queue with RQ (Redis Queue)
+- Real-time progress tracking with 0.1% precision
+- Resource monitoring (CPU, RAM, Disk)
+- Background interpolation for smooth progress updates
+- SSE (Server-Sent Events) streaming for live UI updates
 
-├── Symbol/Exchange Pairs (BTC/USDT on Binance, ETH/USDT on Coinbase, etc.)
+### 3. Enhanced Trading Infrastructure
 
-1. **From Server (Recommended)**:├── Market Regimes (Bull, Bear, Sideways)
-
-   ```bash├── Timeframes (1m, 5m, 15m, 1h, 4h, 1d)
-
-   ssh root@138.68.245.159└── Strategy Parameters (ATR periods, volume thresholds, divergence sensitivity)
-
-   source /etc/trad/trad.env
-
-   PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "SELECT ..."Result: 54 unique combinations per asset = Custom-tuned A+ setups
-
-   ``````
-
-
-
-2. **For Migrations (Use postgres user)**:### 3. Enhanced Trading Infrastructure
-
-   ```bash- **ExecutionCore**: OCO order management, position sizing, risk controls
-
-   ssh root@138.68.245.159 "sudo -u postgres psql -d trad -f /path/to/migration.sql"- **TrainedAssetsManager**: ML model deployment and parameter optimization
-
-   ```- **TradePulse IQ API**: 30+ endpoints for real-time monitoring and control
-
+- **ExecutionCore**: OCO order management, position sizing, risk controls
+- **TrainedAssetsManager**: ML model deployment and parameter optimization
+- **TradePulse IQ API**: 30+ endpoints for real-time monitoring and control
 - **Risk Management**: Fixed percentage model with precise position calculations
 
-3. **Common Queries**:
+### 4. Precision Trading Logic
 
-   ```bash### 4. Precision Trading Logic
+```python
+# How strategies work with ML optimization:
+strategy = load_strategy("htf_sweep")
+ml_params = trained_assets.get_optimized_parameters("BTC/USDT", "binance", "htf_sweep")
 
-   # List tables```python
+# Apply A+ logic with ML-tuned thresholds
+if strategy.check_confluence(market_data, **ml_params):
+    signal = strategy.generate_signal(entry_conditions=ml_params.entry_thresholds)
+    execution_core.execute_trade(signal)  # Only on high-confidence setups
+```
 
-   \dt# How strategies work with ML optimization:
+## 📁 Project Structure
 
-   strategy = load_strategy("htf_sweep")
-
-   # Describe tableml_params = trained_assets.get_optimized_parameters("BTC/USDT", "binance", "htf_sweep")
-
-   \d trained_configurations
-
-   # Apply A+ logic with ML-tuned thresholds
-
-   # Check constraintsif strategy.check_confluence(market_data, **ml_params):
-
-   SELECT conname FROM pg_constraint WHERE conrelid = 'trained_configurations'::regclass;    signal = strategy.generate_signal(entry_conditions=ml_params.entry_thresholds)
-
-       execution_core.execute_trade(signal)  # Only on high-confidence setups
-
-   # View recent configs```
-
-   SELECT id, strategy_name, status, created_at FROM trained_configurations ORDER BY created_at DESC LIMIT 10;
-
-   ```## 📁 Project Structure
-
-
-
-### Development Workflow```
-
-```bash├── api/                    # TradePulse IQ FastAPI Backend (30+ endpoints)
-
-# 1. Make code changes locally│   ├── main.py            # FastAPI app with all routers
-
-vim training/configuration_writer.py│   ├── portfolio.py       # Portfolio management & risk endpoints  
-
+```
+├── api/                    # TradePulse IQ FastAPI Backend (30+ endpoints)
+│   ├── main.py            # FastAPI app with all routers
+│   ├── portfolio.py       # Portfolio management & risk endpoints  
 │   ├── trades.py          # Trade execution & history endpoints
-
-# 2. Test locally if possible│   ├── patterns.py        # Strategy performance & trained assets
-
-python -m training.configuration_writer│   ├── training.py        # ML training system endpoints
-
+│   ├── training_queue.py  # Training job queue management (NEW)
+│   ├── system.py          # System resources monitoring (NEW)
+│   ├── patterns.py        # Strategy performance & trained assets
+│   ├── training.py        # ML training system endpoints
 │   ├── analytics.py       # Market analysis & asset ranking
-
-# 3. Deploy to production│   ├── exchanges.py       # Multi-exchange connection management
-
-SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh│   └── static/           # React dashboard frontend files
-
+│   ├── exchanges.py       # Multi-exchange connection management
+│   └── static/           # React dashboard frontend files
 ├── core/                  # Core trading system components
-
-# 4. Verify services│   ├── execution_core.py  # Enhanced execution with OCO orders
-
-ssh root@138.68.245.159 "systemctl status trad-api.service trad-worker.service"│   ├── data_handler.py    # Market data management
-
-```│   ├── event_system.py    # Event-driven architecture
-
+│   ├── execution_core.py  # Enhanced execution with OCO orders
+│   ├── data_handler.py    # Market data management
+│   ├── event_system.py    # Event-driven architecture
 │   └── signal_library.py  # Technical analysis library
-
----├── strategies/            # A+ Strategy implementations
+├── strategies/            # A+ Strategy implementations
 
 │   ├── htf_sweep.py      # Higher timeframe liquidity sweep
 
@@ -396,57 +358,36 @@ Parameter (specific values: 0.18, 3, 2.8)
 
 ### Development & Deployment
 
-### Schema Files```bash
+### Schema Files
 
-- **`sql/schema.sql`**: Master schema (source of truth)# Build V2 dashboard
-
-- **`sql/migrations/`**: Incremental migration scriptscd tradepulse-v2
-
-- **`sql/schema_production_dump.sql`**: Reference snapshot (read-only)npm install
-
-npm run build  # Outputs to ../api/static/
+- **`sql/schema.sql`**: Master schema (source of truth)
+- **`sql/migrations/`**: Incremental migration scripts
+- **`sql/schema_production_dump.sql`**: Reference snapshot (read-only)
 
 ### Database Details
 
-- **Host**: localhost (on server)# Deploy to production (includes V2 build)
-
-- **Port**: 5432SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad ./ops/scripts/deploy_to_server.sh
-
+- **Host**: localhost (on server)
+- **Port**: 5432
 - **Database**: `trad`
+- **User**: `traduser`
+- **Password**: `TRAD123!` (in `/etc/trad/trad.env`)
+- **Owner**: `postgres` (for DDL operations)
 
-- **User**: `traduser`# Access dashboard
+### Making Schema Changes
 
-- **Password**: `TRAD123!` (in `/etc/trad/trad.env`)open http://138.68.245.159:8000  # Served by FastAPI from api/static/
+#### Method 1: Quick Changes (Development)
 
-- **Owner**: `postgres` (for DDL operations)```
+```bash
+# Edit master schema
+vim sql/schema.sql
 
+# Sync to production (from project root)
+cd /workspaces/Trad
+bash /workspaces/Trad/ops/scripts/sync_schema.sh --dry-run  # Preview
+bash /workspaces/Trad/ops/scripts/sync_schema.sh            # Apply
+```
 
-
-### Making Schema Changes### Breaking Changes from V1
-
-- ❌ `Pattern*` types removed → Use `Strategy*` types
-
-#### Method 1: Quick Changes (Development)- ❌ `mockApi.ts` deprecated → Use `realApi.ts` only
-
-```bash- ❌ `trained_assets` table → Migrated to `trained_configurations`
-
-# Edit master schema- ✅ All frontend imports updated to `realApi`
-
-vim sql/schema.sql- ✅ Database migration 004 applied to production
-
-- ✅ 13 seed configurations loaded for testing
-
-# Sync to production
-
-./ops/scripts/sync_schema.sh --dry-run  # Preview---
-
-./ops/scripts/sync_schema.sh            # Apply
-
-```## 🎮 TradePulse IQ Dashboard (V1 - Deprecated)
-
-
-
-#### Method 2: Production Migrations (Recommended)**Legacy dashboard information retained for reference.**
+#### Method 2: Production Migrations (Recommended)
 
 ```bash
 
@@ -983,44 +924,31 @@ ssh root@138.68.245.159 "redis-cli ping"	3) Create Python virtual environments a
 3. Use transactions (BEGIN/COMMIT)	These commands assume GNU Make is available and you’re in the repo root.
 
 4. Make migrations idempotent (IF EXISTS, IF NOT EXISTS)
+5. Document WHY, not just WHAT
 
-5. Document WHY, not just WHAT	1) Infra + envs
+### Deployment
 
+1. Use standard deployment script with full path:
+   ```bash
+   cd /workspaces/Trad
+   SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash /workspaces/Trad/ops/scripts/deploy_to_server.sh
+   ```
+2. Verify services after deployment
+3. Check logs for errors
+4. Test critical functionality
 
+### Consistency is Key
 
-### Deployment	```bash
+- Always connect to DB the same way (use documented methods)
+- Follow established patterns for new code
+- Update documentation when adding features
+- Keep README.md as single source of truth for quick reference
 
-1. Use standard deployment script: `./ops/scripts/deploy_to_server.sh`	cp config/.env.example config/.env
+---
 
-2. Verify services after deployment	## If using existing Postgres: set DB_* in config/.env and apply schema
+**Built with precision. Optimized with intelligence. Executed with confidence.**
 
-3. Check logs for errors	make db-apply-schema-host
-
-4. Test critical functionality	## If using Docker Postgres instead:
-
-	# make infra-up
-
-### Consistency is Key	make venv-meta venv-encoder venv-policy
-
-- Always connect to DB the same way (use documented methods)	make install-meta
-
-- Follow established patterns for new code	make install-encoder
-
-- Update documentation when adding features	make install-policy
-
-- Keep README.md as single source of truth for quick reference	```
-
-
-
----	2) Initialize configs and seed data
-
-
-
-**Built with precision. Optimized with intelligence. Executed with confidence.**	```bash
-
-	# Write default policy_config and market_state
-
-*TradePulse IQ - Where A-Plus financial logic meets machine learning optimization.*	make run-meta
+*TradePulse IQ - Where A-Plus financial logic meets machine learning optimization.*
 
 
 	# Backfill candles from Kraken (requires API keys in config/.env)
