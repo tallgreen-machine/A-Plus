@@ -316,6 +316,7 @@ async def stream_training_progress(job_id: str):
         try:
             db_url = get_db_url()
             last_progress = -1
+            last_log_id = 0
             job_id_int = int(job_id)
             
             while True:
@@ -327,6 +328,15 @@ async def stream_training_progress(job_id: str):
                         job_id_int
                     )
                     
+                    # Fetch new logs since last check
+                    new_logs = await conn.fetch(
+                        """SELECT id, timestamp, message, progress, log_level 
+                           FROM training_logs 
+                           WHERE job_id = $1 AND id > $2 
+                           ORDER BY id ASC""",
+                        job_id_int, last_log_id
+                    )
+                    
                     await conn.close()
                     
                     if not job:
@@ -335,6 +345,19 @@ async def stream_training_progress(job_id: str):
                             "data": json.dumps({"error": "Job not found"})
                         }
                         break
+                    
+                    # Send new log messages
+                    for log in new_logs:
+                        last_log_id = log['id']
+                        yield {
+                            "event": "log",
+                            "data": json.dumps({
+                                "message": log['message'],
+                                "timestamp": log['timestamp'].isoformat(),
+                                "progress": float(log['progress']) if log['progress'] else 0,
+                                "log_level": log['log_level']
+                            })
+                        }
                     
                     # Only send update if progress changed
                     current_progress = float(job['progress'] or 0)

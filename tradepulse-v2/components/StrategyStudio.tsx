@@ -133,23 +133,35 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     // Connect to SSE stream
                     eventSource = new EventSource(`/api/training/${runningJob.id}/stream`);
                     
-                    eventSource.onmessage = (event) => {
+                    // Listen for log events
+                    eventSource.addEventListener('log', (event: any) => {
                         try {
                             const data = JSON.parse(event.data);
                             if (data.message) {
                                 // Append new log to accumulated logs
                                 setAllTrainingLogs(prev => [...prev, {
-                                    timestamp: new Date().toLocaleTimeString(),
+                                    timestamp: new Date(data.timestamp).toLocaleTimeString(),
                                     message: data.message,
                                     progress: data.progress || 0,
                                     jobId: parseInt(runningJob.id),
-                                    level: 'info',
+                                    level: data.log_level || 'info',
                                 }]);
                             }
                         } catch (error) {
-                            console.error('Error parsing SSE message:', error);
+                            console.error('Error parsing SSE log event:', error);
                         }
-                    };
+                    });
+                    
+                    // Listen for progress events (optional - for progress bar updates)
+                    eventSource.addEventListener('progress', (event: any) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            // Could update a progress bar here if needed
+                            console.log('Progress update:', data.progress);
+                        } catch (error) {
+                            console.error('Error parsing SSE progress event:', error);
+                        }
+                    });
 
                     eventSource.onerror = () => {
                         console.log('SSE connection closed or error occurred');
