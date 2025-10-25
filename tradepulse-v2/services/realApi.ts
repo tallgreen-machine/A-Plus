@@ -267,6 +267,15 @@ export const deactivateConfiguration = async (configurationId: string): Promise<
 };
 
 /**
+ * Delete a trained configuration (permanently)
+ */
+export const deleteTrainedConfiguration = async (configurationId: string): Promise<void> => {
+  await apiFetch(`/api/training/configurations/${configurationId}`, {
+    method: 'DELETE',
+  });
+};
+
+/**
  * Get configurations summary statistics
  */
 export const getConfigurationsSummary = async (): Promise<{

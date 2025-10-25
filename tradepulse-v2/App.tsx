@@ -147,6 +147,13 @@ const App: React.FC = () => {
         setTrainedConfigurations([]);
     }
     
+    const handleDeleteConfig = (configId: string) => {
+        // Remove the deleted configuration from the state
+        setTrainedConfigurations(prev => 
+            prev ? prev.filter(config => config.id !== configId) : null
+        );
+    }
+    
     const handleActivateVisibleConfigs = (visibleIds: string[]) => {
         // Update local state for immediate UI feedback
         setTrainedConfigurations(prev => {
@@ -589,6 +596,7 @@ const App: React.FC = () => {
                     serverLatency={serverLatency} 
                     onActivateVisible={handleActivateVisibleConfigs}
                     onSelectConfig={setSelectedConfig}
+                    onDeleteConfig={handleDeleteConfig}
                 />;
             case 'strategyStudio':
                 return <StrategyStudio currentUser={currentUser} onTrainingComplete={handleTrainingComplete} />;

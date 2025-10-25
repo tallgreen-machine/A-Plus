@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import type { TrainedConfiguration } from '../types';
-import { BrainCircuitIcon, LayoutGridIcon, ListOrderedIcon, RotateCcwIcon, ChevronDownIcon, ServerIcon, SearchIcon, ZapIcon } from './icons';
+import { BrainCircuitIcon, LayoutGridIcon, ListOrderedIcon, RotateCcwIcon, ChevronDownIcon, ServerIcon, SearchIcon, ZapIcon, TrashIcon } from './icons';
+import { deleteTrainedConfiguration } from '../services/realApi';
 
 interface TrainedAssetsProps {
     assets: TrainedConfiguration[] | null;
@@ -8,28 +9,24 @@ interface TrainedAssetsProps {
     serverLatency: number;
     onActivateVisible: (visibleIds: string[]) => void;
     onSelectConfig: (config: TrainedConfiguration) => void;
+    onDeleteConfig?: (configId: string) => void;
 }
 
-// Utility function to format relative time
-const formatRelativeTime = (isoTimestamp: string | undefined): string => {
+// Utility function to format timestamp as actual date and time
+const formatDateTime = (isoTimestamp: string | undefined): string => {
     if (!isoTimestamp) return 'Unknown';
     
-    const now = new Date();
-    const past = new Date(isoTimestamp);
-    const diffMs = now.getTime() - past.getTime();
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHr = Math.floor(diffMin / 60);
-    const diffDays = Math.floor(diffHr / 24);
+    const date = new Date(isoTimestamp);
     
-    if (diffSec < 60) return 'Just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    if (diffHr < 24) return `${diffHr}h ago`;
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
-    
-    return past.toLocaleDateString();
+    // Format as: "Jan 15, 2025 3:45 PM"
+    return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
 };
 
 const LifecycleBadge: React.FC<{ stage: TrainedConfiguration['lifecycle_stage'] }> = ({ stage }) => {
@@ -44,7 +41,7 @@ const LifecycleBadge: React.FC<{ stage: TrainedConfiguration['lifecycle_stage'] 
     return <span className={`px-2 py-1 text-xs font-bold rounded-full ${color}`}>{stage}</span>;
 }
 
-const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> = ({ asset, onClick }) => {
+const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void; onDelete: (e: React.MouseEvent) => void }> = ({ asset, onClick, onDelete }) => {
     const isProfitable = asset.performance.net_profit > 0;
     return (
         <div 
@@ -56,13 +53,22 @@ const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> 
                     <h3 className="font-bold text-brand-text-primary">{asset.pair}</h3>
                     <p className="text-xs text-brand-text-secondary">{asset.exchange} - {asset.timeframe}</p>
                     <p className="text-xs text-brand-text-secondary mt-0.5">
-                        Trained {formatRelativeTime(asset.created_at)}
+                        Trained {formatDateTime(asset.created_at)}
                         {asset.training_settings?.optimizer && (
                             <span className="ml-1">• {asset.training_settings.optimizer}</span>
                         )}
                     </p>
                 </div>
-                <LifecycleBadge stage={asset.lifecycle_stage} />
+                <div className="flex gap-2 items-start">
+                    <LifecycleBadge stage={asset.lifecycle_stage} />
+                    <button
+                        onClick={onDelete}
+                        className="text-brand-text-secondary hover:text-brand-negative transition-colors p-1"
+                        title="Delete configuration"
+                    >
+                        <TrashIcon className="w-4 h-4" />
+                    </button>
+                </div>
             </header>
             
             <div className="text-xs text-brand-text-secondary truncate" title={asset.strategy_name}>
@@ -91,17 +97,17 @@ const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> 
     );
 }
 
-const AssetListItem: React.FC<{ asset: TrainedConfiguration; onClick: () => void }> = ({ asset, onClick }) => {
+const AssetListItem: React.FC<{ asset: TrainedConfiguration; onClick: () => void; onDelete: (e: React.MouseEvent) => void }> = ({ asset, onClick, onDelete }) => {
     const isProfitable = asset.performance.net_profit > 0;
     return (
         <div 
             onClick={onClick}
-            className={`grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-sm p-3 bg-brand-surface rounded-md border transition-colors cursor-pointer ${asset.isActive ? 'border-brand-primary' : 'border-transparent hover:border-brand-border/50'}`}
+            className={`grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] items-center gap-4 text-sm p-3 bg-brand-surface rounded-md border transition-colors cursor-pointer ${asset.isActive ? 'border-brand-primary' : 'border-transparent hover:border-brand-border/50'}`}
         >
             <div>
                 <p className="font-semibold text-brand-text-primary">{asset.pair}</p>
                 <p className="text-xs text-brand-text-secondary truncate">{asset.strategy_name}</p>
-                <p className="text-xs text-brand-text-secondary">{formatRelativeTime(asset.created_at)}</p>
+                <p className="text-xs text-brand-text-secondary">{formatDateTime(asset.created_at)}</p>
             </div>
             <p className="text-xs text-brand-text-secondary">{asset.exchange}</p>
             <p className="text-xs text-brand-text-secondary">{asset.timeframe}</p>
@@ -111,18 +117,27 @@ const AssetListItem: React.FC<{ asset: TrainedConfiguration; onClick: () => void
             <p className="text-xs text-brand-text-secondary">{asset.performance.sample_size}</p>
             <p className="text-xs text-brand-text-secondary capitalize">{asset.training_settings?.optimizer || '-'}</p>
             <LifecycleBadge stage={asset.lifecycle_stage} />
+            <button
+                onClick={onDelete}
+                className="text-brand-text-secondary hover:text-brand-negative transition-colors p-1"
+                title="Delete configuration"
+            >
+                <TrashIcon className="w-4 h-4" />
+            </button>
         </div>
     );
 }
 
 
-export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, serverLatency, onActivateVisible, onSelectConfig }) => {
+export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, serverLatency, onActivateVisible, onSelectConfig, onDeleteConfig }) => {
     const [selectedStages, setSelectedStages] = useState<TrainedConfiguration['lifecycle_stage'][]>([]);
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [view, setView] = useState<'grid' | 'list'>('grid');
     const [serverLoad, setServerLoad] = useState(100);
     const filterRef = useRef<HTMLDivElement>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const allStages: TrainedConfiguration['lifecycle_stage'][] = ['DISCOVERY', 'VALIDATION', 'MATURE', 'DECAY', 'PAPER'];
 
@@ -182,6 +197,34 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
     const handleActivateVisible = () => {
         const visibleIds = filteredAndSortedAssets.map(asset => asset.id);
         onActivateVisible(visibleIds);
+    };
+
+    const handleDeleteClick = (e: React.MouseEvent, configId: string) => {
+        e.stopPropagation(); // Prevent card click
+        setDeleteConfirmId(configId);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!deleteConfirmId) return;
+        
+        setIsDeleting(true);
+        try {
+            await deleteTrainedConfiguration(deleteConfirmId);
+            // Call parent callback to refresh the list
+            if (onDeleteConfig) {
+                onDeleteConfig(deleteConfirmId);
+            }
+        } catch (error) {
+            console.error('Failed to delete configuration:', error);
+            alert('Failed to delete configuration. Please try again.');
+        } finally {
+            setIsDeleting(false);
+            setDeleteConfirmId(null);
+        }
+    };
+
+    const handleDeleteCancel = () => {
+        setDeleteConfirmId(null);
     };
 
 
@@ -346,12 +389,17 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
                 ) : view === 'grid' ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
                         {filteredAndSortedAssets.map(asset => (
-                            <AssetCard key={asset.id} asset={asset} onClick={() => onSelectConfig(asset)} />
+                            <AssetCard 
+                                key={asset.id} 
+                                asset={asset} 
+                                onClick={() => onSelectConfig(asset)}
+                                onDelete={(e) => handleDeleteClick(e, asset.id)}
+                            />
                         ))}
                     </div>
                 ) : (
                     <div className="space-y-2">
-                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr] items-center gap-4 text-xs p-3 text-brand-text-secondary font-semibold border-b border-brand-border">
+                         <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] items-center gap-4 text-xs p-3 text-brand-text-secondary font-semibold border-b border-brand-border">
                             <span>Pair / Strategy</span>
                             <span>Exchange</span>
                             <span>Timeframe</span>
@@ -361,13 +409,48 @@ export const TrainedAssets: React.FC<TrainedAssetsProps> = ({ assets, onClear, s
                             <span>Trades</span>
                             <span>Optimizer</span>
                             <span>Stage</span>
+                            <span>Actions</span>
                         </div>
                         {filteredAndSortedAssets.map(asset => (
-                            <AssetListItem key={asset.id} asset={asset} onClick={() => onSelectConfig(asset)} />
+                            <AssetListItem 
+                                key={asset.id} 
+                                asset={asset} 
+                                onClick={() => onSelectConfig(asset)}
+                                onDelete={(e) => handleDeleteClick(e, asset.id)}
+                            />
                         ))}
                     </div>
                 )}
             </main>
+
+            {/* Delete Confirmation Dialog */}
+            {deleteConfirmId && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-brand-surface border border-brand-border rounded-lg p-6 max-w-md mx-4">
+                        <h3 className="text-xl font-bold text-brand-text-primary mb-3">Delete Configuration?</h3>
+                        <p className="text-brand-text-secondary mb-6">
+                            Are you sure you want to permanently delete this trained configuration? 
+                            This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3 justify-end">
+                            <button
+                                onClick={handleDeleteCancel}
+                                disabled={isDeleting}
+                                className="px-4 py-2 text-sm font-semibold text-brand-text-primary bg-brand-bg border border-brand-border rounded-md hover:bg-brand-border transition-colors disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteConfirm}
+                                disabled={isDeleting}
+                                className="px-4 py-2 text-sm font-semibold text-white bg-brand-negative hover:bg-red-600 rounded-md transition-colors disabled:opacity-50"
+                            >
+                                {isDeleting ? 'Deleting...' : 'Delete'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

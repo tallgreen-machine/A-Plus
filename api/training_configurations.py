@@ -362,3 +362,58 @@ async def get_configurations_summary():
     except Exception as e:
         log.error(f"Error retrieving configuration summary: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@router.delete("/{configuration_id}")
+async def delete_configuration(configuration_id: str):
+    """
+    Permanently delete a trained configuration
+    
+    This will remove the configuration record from the database.
+    Use with caution - this operation cannot be undone.
+    """
+    try:
+        db = get_database()
+        
+        # First check if the configuration exists
+        check_query = """
+            SELECT id, strategy_name, exchange, pair, timeframe
+            FROM trained_configurations
+            WHERE id = %s
+        """
+        
+        cursor = db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(check_query, (configuration_id,))
+        result = cursor.fetchone()
+        
+        if not result:
+            cursor.close()
+            raise HTTPException(status_code=404, detail=f"Configuration {configuration_id} not found")
+        
+        config_info = dict(result)
+        
+        # Delete the configuration
+        delete_query = """
+            DELETE FROM trained_configurations
+            WHERE id = %s
+        """
+        
+        cursor.execute(delete_query, (configuration_id,))
+        db.commit()
+        cursor.close()
+        
+        log.info(f"Deleted configuration: {config_info['strategy_name']} on {config_info['exchange']} {config_info['pair']} {config_info['timeframe']}")
+        
+        return {
+            "success": True,
+            "message": f"Configuration {configuration_id} permanently deleted",
+            "deleted_configuration": config_info
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error deleting configuration {configuration_id}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
