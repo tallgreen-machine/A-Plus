@@ -12,11 +12,22 @@ interface LogEntry {
   };
 }
 
-interface AnimatedProgressProps {
-  logs: LogEntry[];
+interface ProgressData {
+  progress: number;
+  current_episode?: number;
+  total_episodes?: number;
+  current_reward?: number;
+  current_loss?: number;
+  stage?: string;
+  status?: string;
 }
 
-const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs }) => {
+interface AnimatedProgressProps {
+  logs: LogEntry[];
+  currentProgress?: ProgressData;
+}
+
+const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgress }) => {
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new logs arrive
@@ -49,11 +60,64 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs }) => {
 
   return (
     <div className="bg-gray-950 rounded-lg p-4 h-full flex flex-col">
+      {/* Header */}
       <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-800">
-        <h3 className="text-sm font-semibold text-gray-400 font-mono">Training Log History</h3>
-        <span className="text-xs text-gray-500 font-mono">{logs.length} entries</span>
+        <h3 className="text-sm font-semibold text-gray-400 font-mono">Training Progress</h3>
+        <span className="text-xs text-gray-500 font-mono">{logs.length} log entries</span>
       </div>
 
+      {/* Current Progress Display */}
+      {currentProgress && currentProgress.status === 'running' && (
+        <div className="mb-4 p-3 bg-gray-900 rounded-lg border border-gray-800">
+          {/* Progress Bar */}
+          <div className="mb-3">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs text-gray-400 font-mono">
+                {currentProgress.stage || 'Training...'}
+              </span>
+              <span className="text-xs text-blue-400 font-mono font-semibold">
+                {currentProgress.progress.toFixed(1)}%
+              </span>
+            </div>
+            <div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all duration-300 ease-out"
+                style={{ width: `${currentProgress.progress}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Training Details */}
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            {currentProgress.current_episode !== undefined && currentProgress.total_episodes && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Episode:</span>
+                <span className="text-gray-300 font-mono">
+                  {currentProgress.current_episode} / {currentProgress.total_episodes}
+                </span>
+              </div>
+            )}
+            {currentProgress.current_reward !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Reward:</span>
+                <span className={`font-mono ${currentProgress.current_reward >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {currentProgress.current_reward.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {currentProgress.current_loss !== undefined && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Loss:</span>
+                <span className="text-yellow-400 font-mono">
+                  {currentProgress.current_loss.toFixed(4)}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Log content */}
       <div 
         ref={logContainerRef}
         className="flex-1 overflow-y-auto font-mono text-xs space-y-1"

@@ -87,6 +87,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [trainingLog, setTrainingLog] = useState<LogEntry[]>([]);
     const [allTrainingLogs, setAllTrainingLogs] = useState<LogEntry[]>([]);
+    const [currentProgress, setCurrentProgress] = useState<any>(null);
     const logContainerRef = useRef<HTMLDivElement>(null);
     const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -156,8 +157,16 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     eventSource.addEventListener('progress', (event: any) => {
                         try {
                             const data = JSON.parse(event.data);
-                            // Could update a progress bar here if needed
-                            console.log('Progress update:', data.progress);
+                            // Update progress state for display
+                            setCurrentProgress({
+                                progress: data.progress || 0,
+                                current_episode: data.current_episode,
+                                total_episodes: data.total_episodes,
+                                current_reward: data.current_reward,
+                                current_loss: data.current_loss,
+                                stage: data.stage,
+                                status: data.status
+                            });
                         } catch (error) {
                             console.error('Error parsing SSE progress event:', error);
                         }
@@ -174,6 +183,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     // No running job, close connection
                     eventSource.close();
                     eventSource = null;
+                    setCurrentProgress(null); // Clear progress when no job running
                 }
             } catch (error) {
                 console.error('Failed to check for active job:', error);
@@ -548,7 +558,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                 
                 {/* Column 4: Animated Progress */}
                 <div className="overflow-y-auto">
-                    <AnimatedProgress logs={allTrainingLogs} />
+                    <AnimatedProgress logs={allTrainingLogs} currentProgress={currentProgress} />
                 </div>
             </main>
         </div>
