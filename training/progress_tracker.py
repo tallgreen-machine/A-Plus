@@ -85,14 +85,7 @@ class ProgressTracker:
             if self.STEPS[s]['number'] < step_info['number']
         )
         
-        # Save log entry
-        await self._save_log(
-            message=f"Starting: {step_info['name']}",
-            progress=overall_pct,
-            log_level='INFO'
-        )
-        
-        # Update training_jobs table with new status
+        # Update training_jobs table with new status (for live display only, not logged)
         await self._update_job_status(
             status='running',
             progress=overall_pct,
@@ -131,48 +124,76 @@ class ProgressTracker:
         current_contribution = step_info['weight'] * (step_percentage / 100.0)
         overall_pct = (previous_weight + current_contribution) * 100
         
-        # Only update if progress changed by at least 0.1% to reduce DB writes
-        if abs(overall_pct - self.last_percentage) >= 0.1 or step_percentage >= 100.0:
-            self.last_percentage = overall_pct
-            self.last_step_number = step_info['number']
-            
-            # Build progress message
-            message_parts = [f"Training..."]
-            if iteration and total_iterations:
-                message_parts.append(f"Episode {iteration}/{total_iterations}")
-            if reward is not None:
-                message_parts.append(f"Reward: {reward:.4f}")
-            if loss is not None:
-                message_parts.append(f"Loss: {loss:.4f}")
-            message_parts.append(f"Stage: {step_info['name']}")
-            
-            progress_message = " | ".join(message_parts)
-            
-            # Save log entry
-            await self._save_log(
-                message=progress_message,
-                progress=overall_pct,
-                log_level='INFO'
-            )
-            
-            # Update training_jobs table
-            await self._update_job_status(
-                status='running',
-                progress=overall_pct,
-                current_stage=step_info['name'],
-                current_episode=iteration,
-                total_episodes=total_iterations,
-                current_reward=reward,
-                current_loss=loss
-            )
+        # Build CLI-style progress message for SSE stream
+        # Line 1: Status with details
+        status_parts = [f"{step_info['name']}..."]
+        if iteration and total_iterations:
+            status_parts.append(f"Episode {iteration}/{total_iterations}")
+        if reward is not None:
+            status_parts.append(f"Reward: {reward:.2f}")
+        if loss is not None:
+            status_parts.append(f"Loss: {loss:.4f}")
+        
+        status_line = " | ".join(status_parts)
+        
+        # Line 2: ASCII progress bar
+        bar_width = 50
+        filled = int(bar_width * overall_pct / 100)
+        bar = '█' * filled + '░' * (bar_width - filled)
+        progress_line = f"[{overall_pct:.1f}%] {bar}"
+        
+        # Combine both lines
+        progress_message = f"{status_line}\n{progress_line}"
+        
+        # Always update job status for SSE/live display (this is lightweight)
+        await self._update_job_status(
+            status='running',
+            progress=overall_pct,
+            current_stage=step_info['name'],
+            current_episode=iteration,
+            total_episodes=total_iterations,
+            current_reward=reward,
+            current_loss=loss
+        )
+        
+        # Don't persist progress updates to database - only show in live display
+        # History logs should only contain final completion messages
     
     async def complete(self):
         """Mark training as complete."""
         logger.info(f"[{self.job_id}] Training complete!")
         
-        # Save completion log
+        # Fetch job metadata from database to include in completion message
+        try:
+            conn = await asyncpg.connect(self.db_url)
+            try:
+                job_data = await conn.fetchrow(
+                    """
+                    SELECT strategy_name, pair, exchange, timeframe, regime, submitted_at
+                    FROM training_jobs
+                    WHERE id = $1
+                    """,
+                    int(self.job_id)
+                )
+                
+                if job_data:
+                    # Build completion message with job details
+                    complete_message = (
+                        f"✓ Job #{self.job_id} | {job_data['strategy_name']} | "
+                        f"{job_data['pair']} | {job_data['exchange']} | "
+                        f"{job_data['timeframe']} | {job_data['regime']} | "
+                        f"Completed successfully"
+                    )
+                else:
+                    complete_message = f"✓ Job #{self.job_id} completed successfully"
+            finally:
+                await conn.close()
+        except Exception as e:
+            logger.error(f"Failed to fetch job metadata: {e}")
+            complete_message = f"✓ Job #{self.job_id} completed successfully"
+        
         await self._save_log(
-            message="✓ Training completed successfully",
+            message=complete_message,
             progress=100.0,
             log_level='SUCCESS'
         )

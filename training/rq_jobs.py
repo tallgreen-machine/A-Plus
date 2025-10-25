@@ -314,8 +314,8 @@ async def _run_training_job_async(
                         progress_callback=optimization_progress_callback
                     )
                 )
-            else:
-                # RandomSearchOptimizer and GridSearchOptimizer use n_iterations
+            elif optimizer == 'random':
+                # RandomSearchOptimizer uses n_iterations
                 result = await loop.run_in_executor(
                     executor,
                     lambda: opt.optimize(
@@ -324,6 +324,20 @@ async def _run_training_job_async(
                         strategy_class=LiquiditySweepStrategy,
                         parameter_space=parameter_space,
                         n_iterations=n_iterations,
+                        objective='sharpe_ratio',
+                        min_trades=10,
+                        progress_callback=optimization_progress_callback
+                    )
+                )
+            else:
+                # GridSearchOptimizer doesn't use n_iterations (tests all combinations)
+                result = await loop.run_in_executor(
+                    executor,
+                    lambda: opt.optimize(
+                        backtest_engine=backtest_engine,
+                        data=data,
+                        strategy_class=LiquiditySweepStrategy,
+                        parameter_space=parameter_space,
                         objective='sharpe_ratio',
                         min_trades=10,
                         progress_callback=optimization_progress_callback

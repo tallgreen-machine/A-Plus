@@ -31,7 +31,8 @@ const TrainingQueue: React.FC = () => {
       try {
         const response = await fetch('/api/training/queue');
         const data = await response.json();
-        setJobs(data);
+        // Reverse the order so newest/running jobs appear at the bottom
+        setJobs(data.reverse());
         setIsLoading(false);
       } catch (error) {
         console.error('Failed to fetch training queue:', error);
@@ -123,35 +124,38 @@ const TrainingQueue: React.FC = () => {
   }
 
   return (
-    <div className="bg-gray-950 rounded-lg p-4 h-full overflow-y-auto">
+    <div className="bg-gray-950 rounded-lg p-4 h-full flex flex-col">
       <h3 className="text-sm font-semibold text-gray-400 mb-3">
         Training Queue ({jobs.length})
       </h3>
 
       {jobs.length === 0 ? (
-        <div className="text-center py-12">
-          <svg
-            className="w-12 h-12 text-gray-600 mx-auto mb-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-            />
-          </svg>
-          <p className="text-sm text-gray-500">No training jobs in queue</p>
-          <p className="text-xs text-gray-600 mt-1">Start a training to see it here</p>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <svg
+              className="w-12 h-12 text-gray-600 mx-auto mb-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              />
+            </svg>
+            <p className="text-sm text-gray-500">No training jobs in queue</p>
+            <p className="text-xs text-gray-600 mt-1">Start a training to see it here</p>
+          </div>
         </div>
       ) : (
-        <div className="space-y-2">
-          {jobs.map(job => (
-            <div
-              key={job.id}
-              className="bg-gray-900 rounded p-3 transition-all hover:bg-gray-800"
+        <div className="flex-1 flex flex-col justify-end overflow-y-auto">
+          <div className="space-y-2">
+            {jobs.map(job => (
+              <div
+                key={job.id}
+                className="bg-gray-900 rounded p-3 transition-all hover:bg-gray-800"
             >
               {/* Status Badge */}
               <div className="flex items-center justify-between mb-2">
@@ -190,6 +194,7 @@ const TrainingQueue: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
         </div>
       )}
     </div>

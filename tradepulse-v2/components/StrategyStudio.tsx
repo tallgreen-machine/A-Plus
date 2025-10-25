@@ -157,7 +157,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     eventSource.addEventListener('progress', (event: any) => {
                         try {
                             const data = JSON.parse(event.data);
-                            // Update progress state for display
+                            // Update progress state for display with job metadata
                             setCurrentProgress({
                                 progress: data.progress || 0,
                                 current_episode: data.current_episode,
@@ -165,7 +165,14 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                                 current_reward: data.current_reward,
                                 current_loss: data.current_loss,
                                 stage: data.stage,
-                                status: data.status
+                                status: data.status,
+                                // Include job metadata for display
+                                jobId: runningJob.id,
+                                strategy_name: runningJob.strategy_name,
+                                pair: runningJob.pair,
+                                exchange: runningJob.exchange,
+                                timeframe: runningJob.timeframe,
+                                regime: runningJob.regime
                             });
                         } catch (error) {
                             console.error('Error parsing SSE progress event:', error);
