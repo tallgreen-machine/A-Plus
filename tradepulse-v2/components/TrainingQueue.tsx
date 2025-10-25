@@ -22,12 +22,7 @@ interface TrainingJob {
   error_message: string | null;
 }
 
-interface TrainingQueueProps {
-  onSelectJob: (jobId: string) => void;
-  selectedJobId: string | null;
-}
-
-const TrainingQueue: React.FC<TrainingQueueProps> = ({ onSelectJob, selectedJobId }) => {
+const TrainingQueue: React.FC = () => {
   const [jobs, setJobs] = useState<TrainingJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -38,12 +33,6 @@ const TrainingQueue: React.FC<TrainingQueueProps> = ({ onSelectJob, selectedJobI
         const data = await response.json();
         setJobs(data);
         setIsLoading(false);
-        
-        // Auto-select the first pending or running job if none is selected
-        if (data.length > 0 && !selectedJobId) {
-          const activeJob = data.find((j: TrainingJob) => j.status === 'running') || data[0];
-          onSelectJob(activeJob.id);
-        }
       } catch (error) {
         console.error('Failed to fetch training queue:', error);
         setIsLoading(false);
@@ -57,7 +46,7 @@ const TrainingQueue: React.FC<TrainingQueueProps> = ({ onSelectJob, selectedJobI
     const interval = setInterval(fetchQueue, 3000);
 
     return () => clearInterval(interval);
-  }, [selectedJobId, onSelectJob]);
+  }, []);
 
   const handleCancel = async (jobId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // Prevent job selection
@@ -162,10 +151,7 @@ const TrainingQueue: React.FC<TrainingQueueProps> = ({ onSelectJob, selectedJobI
           {jobs.map(job => (
             <div
               key={job.id}
-              onClick={() => onSelectJob(job.id)}
-              className={`bg-gray-900 rounded p-3 cursor-pointer transition-all hover:bg-gray-800 ${
-                selectedJobId === job.id ? 'ring-2 ring-blue-500' : ''
-              }`}
+              className="bg-gray-900 rounded p-3 transition-all hover:bg-gray-800"
             >
               {/* Status Badge */}
               <div className="flex items-center justify-between mb-2">

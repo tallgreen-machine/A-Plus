@@ -86,9 +86,103 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [isTraining, setIsTraining] = useState(false);
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
     const [trainingLog, setTrainingLog] = useState<LogEntry[]>([]);
-    const [selectedQueueJobId, setSelectedQueueJobId] = useState<string | null>(null);
+    const [allTrainingLogs, setAllTrainingLogs] = useState<LogEntry[]>([]);
     const logContainerRef = useRef<HTMLDivElement>(null);
     const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    // Fetch all training logs on mount
+    useEffect(() => {
+        const fetchAllLogs = async () => {
+            try {
+                const response = await fetch('/api/training/logs/recent?limit=100');
+                const data = await response.json();
+                // Transform API response to LogEntry format
+                const transformedLogs = data.map((log: any) => ({
+                    timestamp: new Date(log.timestamp).toLocaleTimeString(),
+                    message: log.message,
+                    progress: log.progress,
+                    jobId: log.job_id,
+                    level: log.log_level || 'info',
+                }));
+                setAllTrainingLogs(transformedLogs);
+            } catch (error) {
+                console.error('Failed to fetch training logs:', error);
+            }
+        };
+        fetchAllLogs();
+    }, []);
+
+    // Connect to SSE for active training job
+    useEffect(() => {
+        let eventSource: EventSource | null = null;
+        let pollingInterval: NodeJS.Timeout | null = null;
+
+        const connectToActiveJob = async () => {
+            try {
+                // Find if there's a running job
+                const response = await fetch('/api/training/queue');
+                const jobs = await response.json();
+                const runningJob = jobs.find((j: any) => j.status === 'running');
+
+                if (runningJob) {
+                    // Close existing connection if any
+                    if (eventSource) {
+                        eventSource.close();
+                    }
+
+                    // Connect to SSE stream
+                    eventSource = new EventSource(`/api/training/${runningJob.id}/stream`);
+                    
+                    eventSource.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.message) {
+                                // Append new log to accumulated logs
+                                setAllTrainingLogs(prev => [...prev, {
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    message: data.message,
+                                    progress: data.progress || 0,
+                                    jobId: parseInt(runningJob.id),
+                                    level: 'info',
+                                }]);
+                            }
+                        } catch (error) {
+                            console.error('Error parsing SSE message:', error);
+                        }
+                    };
+
+                    eventSource.onerror = () => {
+                        console.log('SSE connection closed or error occurred');
+                        if (eventSource) {
+                            eventSource.close();
+                            eventSource = null;
+                        }
+                    };
+                } else if (eventSource) {
+                    // No running job, close connection
+                    eventSource.close();
+                    eventSource = null;
+                }
+            } catch (error) {
+                console.error('Failed to check for active job:', error);
+            }
+        };
+
+        // Check immediately
+        connectToActiveJob();
+
+        // Poll for new running jobs every 5 seconds
+        pollingInterval = setInterval(connectToActiveJob, 5000);
+
+        return () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+            }
+        };
+    }, []);
 
     // Auto-scroll log to bottom
     useEffect(() => {
@@ -160,9 +254,8 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
 
             const job = await response.json();
             setCurrentJob(job);
-            setSelectedQueueJobId(job.id); // Auto-select the new job
             addLog(`✓ Training job submitted: ${job.id}`, 'success');
-            addLog(`Job added to queue. Select it to view progress.`, 'info');
+            addLog(`Job added to queue. Watch progress in the log column.`, 'info');
             
             setIsTraining(false); // No longer blocking, job is in queue
 
@@ -439,14 +532,11 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                 </div>
                 
                 {/* Column 3: Training Queue */}
-                <TrainingQueue 
-                    onSelectJob={setSelectedQueueJobId}
-                    selectedJobId={selectedQueueJobId}
-                />
+                <TrainingQueue />
                 
                 {/* Column 4: Animated Progress */}
                 <div className="overflow-y-auto">
-                    <AnimatedProgress jobId={selectedQueueJobId} />
+                    <AnimatedProgress logs={allTrainingLogs} />
                 </div>
             </main>
         </div>

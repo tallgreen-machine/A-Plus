@@ -447,6 +447,49 @@ async def append_training_log(job_id: int, log_entry: TrainingLogCreate):
         raise HTTPException(status_code=500, detail=f"Failed to append log: {str(e)}")
 
 
+@router.get("/logs/recent")
+async def get_recent_training_logs(limit: int = 100) -> List[TrainingLogResponse]:
+    """
+    Get recent training logs across all jobs
+    
+    Returns logs from all jobs sorted by timestamp (oldest first) up to the specified limit.
+    Used to populate the training log history on page load.
+    """
+    try:
+        db_url = get_db_url()
+        conn = await asyncpg.connect(db_url)
+        
+        # Fetch recent logs across all jobs
+        logs = await conn.fetch(
+            """
+            SELECT tl.id, tl.job_id, tl.timestamp, tl.message, tl.progress, tl.log_level, tl.created_at
+            FROM training_logs tl
+            ORDER BY tl.timestamp ASC
+            LIMIT $1
+            """,
+            limit
+        )
+        
+        await conn.close()
+        
+        return [
+            TrainingLogResponse(
+                id=log['id'],
+                job_id=log['job_id'],
+                timestamp=log['timestamp'],
+                message=log['message'],
+                progress=float(log['progress']) if log['progress'] else 0.0,
+                log_level=log['log_level'],
+                created_at=log['created_at']
+            )
+            for log in logs
+        ]
+        
+    except Exception as e:
+        log.error(f"Error fetching recent logs: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch recent logs: {str(e)}")
+
+
 @router.get("/{job_id}/logs")
 async def get_training_logs(job_id: int, limit: int = 1000) -> List[TrainingLogResponse]:
     """

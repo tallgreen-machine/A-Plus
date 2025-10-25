@@ -46,7 +46,11 @@ ssh "${SSH_USER}@${SERVER}" "bash -s" <<EOF
 set -euo pipefail
 DEST="${DEST}"
 sudo mkdir -p /etc/trad
-sudo cp "\${DEST}/config/trad.env" /etc/trad/trad.env
+if [ -f "\${DEST}/config/trad.env" ]; then
+  sudo cp "\${DEST}/config/trad.env" /etc/trad/trad.env
+else
+  echo "No trad.env found, skipping"
+fi
 EOF
 
 echo "[deploy] installing systemd units"
