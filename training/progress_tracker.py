@@ -7,9 +7,11 @@ Publishes progress updates to the training_jobs table for frontend consumption.
 
 import asyncpg
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 import json
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,30 @@ class ProgressTracker:
         self.started_at = datetime.utcnow()
         self.last_percentage = 0.0
         self.last_step_number = 0
+        # API endpoint for logging (defaults to localhost in worker)
+        self.api_url = os.getenv('API_URL', 'http://localhost:8000')
+        
+    async def _save_log(
+        self, 
+        message: str, 
+        progress: float = 0.0, 
+        log_level: str = 'INFO'
+    ):
+        """Save log entry to training_logs table via API."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{self.api_url}/api/training/{self.job_id}/logs",
+                    json={
+                        'timestamp': datetime.utcnow().isoformat(),
+                        'message': message,
+                        'progress': round(progress, 1),
+                        'log_level': log_level
+                    }
+                )
+        except Exception as e:
+            # Don't fail the job if logging fails
+            logger.warning(f"Failed to save log for job {self.job_id}: {e}")
         
     async def start(self, step_name: str, step_details: Optional[Dict[str, Any]] = None):
         """Start tracking a new step."""
@@ -57,6 +83,13 @@ class ProgressTracker:
             self.STEPS[s]['weight'] * 100 
             for s in self.STEPS.keys() 
             if self.STEPS[s]['number'] < step_info['number']
+        )
+        
+        # Save log entry
+        await self._save_log(
+            message=f"Starting: {step_info['name']}",
+            progress=overall_pct,
+            log_level='INFO'
         )
         
         # Update training_jobs table with new status
@@ -103,6 +136,25 @@ class ProgressTracker:
             self.last_percentage = overall_pct
             self.last_step_number = step_info['number']
             
+            # Build progress message
+            message_parts = [f"Training..."]
+            if iteration and total_iterations:
+                message_parts.append(f"Episode {iteration}/{total_iterations}")
+            if reward is not None:
+                message_parts.append(f"Reward: {reward:.4f}")
+            if loss is not None:
+                message_parts.append(f"Loss: {loss:.4f}")
+            message_parts.append(f"Stage: {step_info['name']}")
+            
+            progress_message = " | ".join(message_parts)
+            
+            # Save log entry
+            await self._save_log(
+                message=progress_message,
+                progress=overall_pct,
+                log_level='INFO'
+            )
+            
             # Update training_jobs table
             await self._update_job_status(
                 status='running',
@@ -118,6 +170,13 @@ class ProgressTracker:
         """Mark training as complete."""
         logger.info(f"[{self.job_id}] Training complete!")
         
+        # Save completion log
+        await self._save_log(
+            message="✓ Training completed successfully",
+            progress=100.0,
+            log_level='SUCCESS'
+        )
+        
         await self._update_job_status(
             status='completed',
             progress=100.0,
@@ -128,6 +187,13 @@ class ProgressTracker:
     async def error(self, error_message: str):
         """Mark training as failed."""
         logger.error(f"[{self.job_id}] Training failed: {error_message}")
+        
+        # Save error log
+        await self._save_log(
+            message=f"✗ Error: {error_message}",
+            progress=self.last_percentage or 0.0,
+            log_level='ERROR'
+        )
         
         await self._update_job_status(
             status='failed',

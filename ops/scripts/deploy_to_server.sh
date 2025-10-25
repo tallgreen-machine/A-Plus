@@ -25,18 +25,28 @@ fi
 
 echo "[deploy] syncing repository to ${SSH_USER}@${SERVER}:${DEST}"
 ssh -o StrictHostKeyChecking=accept-new "${SSH_USER}@${SERVER}" "mkdir -p '${DEST}'"
-rsync -az --delete \
+
+# Clean up __pycache__ directories on server first
+echo "[deploy] cleaning up __pycache__ directories on server"
+ssh "${SSH_USER}@${SERVER}" "find '${DEST}' -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true"
+ssh "${SSH_USER}@${SERVER}" "find '${DEST}' -type f -name '*.pyc' -delete 2>/dev/null || true"
+
+rsync -az --delete --delete-excluded \
   --exclude '.git/' \
   --exclude '.venv/' \
   --exclude '__pycache__/' \
+  --exclude '*.pyc' \
+  --exclude 'node_modules/' \
+  --exclude '.env.local' \
+  --exclude 'tradepulse-v2/' \
   ./ "${SSH_USER}@${SERVER}:${DEST}/"
 
 echo "[deploy] installing environment config"
-ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
+ssh "${SSH_USER}@${SERVER}" "bash -s" <<EOF
 set -euo pipefail
-DEST="${DEST:-/srv/trad}"
+DEST="${DEST}"
 sudo mkdir -p /etc/trad
-sudo cp "${DEST}/config/trad.env" /etc/trad/trad.env
+sudo cp "\${DEST}/config/trad.env" /etc/trad/trad.env
 EOF
 
 echo "[deploy] installing systemd units"

@@ -380,3 +380,113 @@ async def stream_training_progress(job_id: str):
             }
     
     return EventSourceResponse(event_generator())
+
+
+# ===== Training Logs Endpoints =====
+
+class TrainingLogCreate(BaseModel):
+    """Request to append a log entry"""
+    timestamp: datetime
+    message: str
+    progress: float = 0.0
+    log_level: str = "info"
+
+class TrainingLogResponse(BaseModel):
+    """Training log entry"""
+    id: int
+    job_id: int  # Changed from str to int
+    timestamp: datetime
+    message: str
+    progress: float
+    log_level: str
+    created_at: datetime
+
+@router.post("/{job_id}/logs")
+async def append_training_log(job_id: int, log_entry: TrainingLogCreate):
+    """
+    Append a log entry to a training job
+    
+    Called during training to persist logs for browser refresh persistence
+    """
+    try:
+        db_url = get_db_url()
+        conn = await asyncpg.connect(db_url)
+        
+        # Verify job exists
+        job = await conn.fetchrow(
+            "SELECT id FROM training_jobs WHERE id = $1",
+            job_id
+        )
+        
+        if not job:
+            await conn.close()
+            raise HTTPException(status_code=404, detail=f"Training job {job_id} not found")
+        
+        # Insert log entry
+        log_id = await conn.fetchval(
+            """
+            INSERT INTO training_logs (job_id, timestamp, message, progress, log_level)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+            """,
+            uuid.UUID(job_id),
+            log_entry.timestamp,
+            log_entry.message,
+            log_entry.progress,
+            log_entry.log_level
+        )
+        
+        await conn.close()
+        
+        return {"id": log_id, "status": "success"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Error appending log for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to append log: {str(e)}")
+
+
+@router.get("/{job_id}/logs")
+async def get_training_logs(job_id: int, limit: int = 1000) -> List[TrainingLogResponse]:
+    """
+    Get historical logs for a training job
+    
+    Returns logs sorted by timestamp (oldest first) up to the specified limit.
+    Used to restore logs after browser refresh.
+    """
+    try:
+        db_url = get_db_url()
+        conn = await asyncpg.connect(db_url)
+        
+        # Fetch logs
+        logs = await conn.fetch(
+            """
+            SELECT id, job_id, timestamp, message, progress, log_level, created_at
+            FROM training_logs
+            WHERE job_id = $1
+            ORDER BY timestamp ASC
+            LIMIT $2
+            """,
+            job_id,
+            limit
+        )
+        
+        await conn.close()
+        
+        return [
+            TrainingLogResponse(
+                id=log['id'],
+                job_id=log['job_id'],  # Already an int
+                timestamp=log['timestamp'],
+                message=log['message'],
+                progress=float(log['progress']),
+                log_level=log['log_level'],
+                created_at=log['created_at']
+            )
+            for log in logs
+        ]
+        
+    except Exception as e:
+        log.error(f"Error fetching logs for job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")

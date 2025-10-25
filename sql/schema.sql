@@ -386,6 +386,29 @@ CREATE INDEX IF NOT EXISTS idx_training_jobs_status ON training_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_training_jobs_submitted_at ON training_jobs(submitted_at);
 CREATE INDEX IF NOT EXISTS idx_training_jobs_rq_job_id ON training_jobs(rq_job_id);
 
+-- Training logs (persistent log history)
+CREATE TABLE IF NOT EXISTS training_logs (
+    id SERIAL PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES training_jobs(id) ON DELETE CASCADE,
+    timestamp TIMESTAMPTZ NOT NULL,
+    message TEXT NOT NULL,
+    progress NUMERIC(5,2) CHECK (progress >= 0 AND progress <= 100),
+    log_level VARCHAR(20) DEFAULT 'INFO' CHECK (log_level IN ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'SUCCESS')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for efficient log queries
+CREATE INDEX IF NOT EXISTS idx_training_logs_job_id ON training_logs(job_id);
+CREATE INDEX IF NOT EXISTS idx_training_logs_timestamp ON training_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_training_logs_job_time ON training_logs(job_id, timestamp);
+
+COMMENT ON TABLE training_logs IS 'Persistent storage for training job logs - keeps last 7 days or 100 most recent jobs';
+COMMENT ON COLUMN training_logs.job_id IS 'Foreign key to training_jobs.id';
+COMMENT ON COLUMN training_logs.timestamp IS 'When the log entry was generated (from training process)';
+COMMENT ON COLUMN training_logs.message IS 'Log message content (progress updates, completions, errors)';
+COMMENT ON COLUMN training_logs.progress IS 'Overall training progress percentage at time of log entry';
+COMMENT ON COLUMN training_logs.log_level IS 'Severity level: DEBUG, INFO, WARNING, ERROR, SUCCESS';
+
 -- Strategy exchange performance (per exchange metrics)
 CREATE TABLE IF NOT EXISTS strategy_exchange_performance (
     id SERIAL PRIMARY KEY,
