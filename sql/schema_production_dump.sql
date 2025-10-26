@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict jEr8uAcE3ioyPpAmcDm21SKTNDx5ZhD8w1dmJZ6AtMy3vkuQk97WcY0HcEFxQlO
+\restrict WZvSb8s6NXRPsh0KMM4ORq7NXJzlsk8JKUeDwrGdDrWLwRqgacxHKVJohMxbWr3
 
 -- Dumped from database version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
 -- Dumped by pg_dump version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
@@ -1293,6 +1293,7 @@ CREATE TABLE public.trained_configurations (
     last_activated_at timestamp with time zone,
     last_deactivated_at timestamp with time zone,
     metadata_json jsonb,
+    job_id integer,
     CONSTRAINT valid_regime CHECK (((regime)::text = ANY ((ARRAY['bull'::character varying, 'bear'::character varying, 'sideways'::character varying, 'volatile'::character varying])::text[]))),
     CONSTRAINT valid_status CHECK (((status)::text = ANY ((ARRAY['DISCOVERY'::character varying, 'VALIDATION'::character varying, 'MATURE'::character varying, 'DECAY'::character varying, 'PAPER'::character varying])::text[]))),
     CONSTRAINT valid_timeframe CHECK (((timeframe)::text = ANY ((ARRAY['1m'::character varying, '5m'::character varying, '15m'::character varying, '1h'::character varying, '4h'::character varying, '1d'::character varying])::text[])))
@@ -1304,6 +1305,13 @@ CREATE TABLE public.trained_configurations (
 --
 
 COMMENT ON TABLE public.trained_configurations IS 'Stores optimized strategy configurations with comprehensive performance and risk metrics';
+
+
+--
+-- Name: COLUMN trained_configurations.job_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.trained_configurations.job_id IS 'Training job ID that created this configuration (for tracking and display)';
 
 
 --
@@ -2780,6 +2788,13 @@ CREATE INDEX idx_trained_configs_strategy ON public.trained_configurations USING
 
 
 --
+-- Name: idx_trained_configurations_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configurations_job_id ON public.trained_configurations USING btree (job_id);
+
+
+--
 -- Name: idx_trained_configurations_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3104,5 +3119,5 @@ ALTER TABLE ONLY public.user_settings
 -- PostgreSQL database dump complete
 --
 
-\unrestrict jEr8uAcE3ioyPpAmcDm21SKTNDx5ZhD8w1dmJZ6AtMy3vkuQk97WcY0HcEFxQlO
+\unrestrict WZvSb8s6NXRPsh0KMM4ORq7NXJzlsk8JKUeDwrGdDrWLwRqgacxHKVJohMxbWr3
 
