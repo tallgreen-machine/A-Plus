@@ -506,6 +506,7 @@ async def stream_training_progress(job_id: str):
         try:
             db_url = get_db_url()
             last_progress = -1
+            last_candle = -1
             last_log_id = 0
             job_id_int = int(job_id)
             
@@ -549,10 +550,16 @@ async def stream_training_progress(job_id: str):
                             })
                         }
                     
-                    # Only send update if progress changed
+                    # Send update if progress OR candle count changed
                     current_progress = float(job['progress'] or 0)
-                    if current_progress != last_progress or job['status'] in ['completed', 'failed', 'cancelled']:
+                    current_candle = job['current_candle'] or 0
+                    
+                    if (current_progress != last_progress or 
+                        current_candle != last_candle or 
+                        job['status'] in ['completed', 'failed', 'cancelled']):
+                        
                         last_progress = current_progress
+                        last_candle = current_candle
                         
                         yield {
                             "event": "progress",
