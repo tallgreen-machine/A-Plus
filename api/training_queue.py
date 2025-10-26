@@ -560,6 +560,8 @@ async def stream_training_progress(job_id: str):
                                 "progress": current_progress,
                                 "current_episode": job['current_episode'],
                                 "total_episodes": job['total_episodes'],
+                                "current_candle": job['current_candle'],
+                                "total_candles": job['total_candles'],
                                 "current_reward": float(job['current_reward']) if job['current_reward'] else None,
                                 "current_loss": float(job['current_loss']) if job['current_loss'] else None,
                                 "stage": job['current_stage'],
