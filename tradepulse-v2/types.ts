@@ -349,6 +349,7 @@ export interface TrainedConfiguration {
     };
   };
   created_at?: string; // ISO timestamp
+  job_id?: number; // Training job ID that created this configuration
   training_settings?: {
     optimizer: string;
     n_iterations?: number;

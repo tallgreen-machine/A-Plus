@@ -53,6 +53,7 @@ const AssetCard: React.FC<{ asset: TrainedConfiguration; onClick: () => void; on
                     <h3 className="font-bold text-brand-text-primary">{asset.pair}</h3>
                     <p className="text-xs text-brand-text-secondary">{asset.exchange} - {asset.timeframe}</p>
                     <p className="text-xs text-brand-text-secondary mt-0.5">
+                        {asset.job_id && <span className="font-semibold">Job #{asset.job_id} • </span>}
                         Trained {formatDateTime(asset.created_at)}
                         {asset.training_settings?.optimizer && (
                             <span className="ml-1">• {asset.training_settings.optimizer}</span>
@@ -107,7 +108,10 @@ const AssetListItem: React.FC<{ asset: TrainedConfiguration; onClick: () => void
             <div>
                 <p className="font-semibold text-brand-text-primary">{asset.pair}</p>
                 <p className="text-xs text-brand-text-secondary truncate">{asset.strategy_name}</p>
-                <p className="text-xs text-brand-text-secondary">{formatDateTime(asset.created_at)}</p>
+                <p className="text-xs text-brand-text-secondary">
+                    {asset.job_id && <span className="font-semibold">Job #{asset.job_id} • </span>}
+                    {formatDateTime(asset.created_at)}
+                </p>
             </div>
             <p className="text-xs text-brand-text-secondary">{asset.exchange}</p>
             <p className="text-xs text-brand-text-secondary">{asset.timeframe}</p>
