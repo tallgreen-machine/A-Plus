@@ -87,14 +87,6 @@ async def _run_training_job_async(
             'lookback_candles': lookback_candles
         })
         
-        # Give frontend time to see 0% before continuing
-        import asyncio
-        await asyncio.sleep(0.5)
-        
-        # Report progress during data loading
-        await progress.update(step_percentage=10.0)  # Starting data fetch
-        await asyncio.sleep(0.5)  # Let frontend see this update
-        
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=symbol,
@@ -102,9 +94,6 @@ async def _run_training_job_async(
             timeframe=timeframe,
             lookback_candles=lookback_candles  # Now using candles directly
         )
-        
-        await progress.update(step_percentage=70.0)  # Data fetched
-        await asyncio.sleep(0.5)  # Let frontend see this update
         
         if data is None or len(data) < 100:
             raise ValueError(f"Insufficient data: {len(data) if data is not None else 0} candles")
