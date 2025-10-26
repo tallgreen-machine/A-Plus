@@ -90,13 +90,15 @@ class LiquiditySweepStrategy:
         
         log.debug(f"LiquiditySweepStrategy initialized: {self.params}")
     
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(self, data: pd.DataFrame, progress_callback: callable = None) -> pd.DataFrame:
         """
         Generate trading signals from OHLCV data.
         
         Args:
             data: DataFrame with columns:
                   timestamp, open, high, low, close, volume, atr
+            progress_callback: Optional callback(current, total, phase) 
+                               Called periodically during signal generation
         
         Returns:
             DataFrame with columns:
@@ -126,10 +128,9 @@ class LiquiditySweepStrategy:
         price_tolerance = df['atr'].median() * 3  # Only check levels within 3 ATR
         
         for i, idx in enumerate(range(self.key_level_lookback, len(df))):
-            # Log progress every 500 candles
-            if i > 0 and i % 500 == 0:
-                pct = (i / total_candles) * 100
-                log.info(f"  Signal generation: {i}/{total_candles} ({pct:.1f}%)")
+            # Report progress every 100 candles (more frequent for visibility)
+            if progress_callback and i > 0 and i % 100 == 0:
+                progress_callback(i, total_candles, 'signal_generation')
             
             row = df.iloc[idx]
             prev_rows = df.iloc[max(0, idx - 10):idx]

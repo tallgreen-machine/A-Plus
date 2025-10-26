@@ -127,8 +127,13 @@ class BacktestEngine:
         if missing:
             raise ValueError(f"Missing required columns: {missing}")
         
-        # Generate signals from strategy
-        signals = strategy_instance.generate_signals(data)
+        # Generate signals from strategy (pass progress callback)
+        def signal_progress(current, total, phase):
+            """Wrapper to convert signal generation progress to candle-style callback."""
+            if progress_callback:
+                progress_callback(current, total)
+        
+        signals = strategy_instance.generate_signals(data, progress_callback=signal_progress)
         
         # Simulate trades
         trades = self._simulate_trades(
