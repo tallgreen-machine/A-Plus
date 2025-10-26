@@ -67,7 +67,7 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
     const filled = Math.floor(barWidth * (progress || 0) / 100);
     const empty = barWidth - filled;
     const bar = '█'.repeat(filled) + '░'.repeat(empty);
-    const progressLine = `[${(progress || 0).toFixed(1)}%] ${bar}`;
+    const progressLine = `[${(progress || 0).toFixed(2)}%] ${bar}`;
     
     return `${jobHeader}\n${statusLine}\n${progressLine}`;
   };

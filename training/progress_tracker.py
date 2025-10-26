@@ -140,7 +140,7 @@ class ProgressTracker:
         bar_width = 50
         filled = int(bar_width * overall_pct / 100)
         bar = '█' * filled + '░' * (bar_width - filled)
-        progress_line = f"[{overall_pct:.1f}%] {bar}"
+        progress_line = f"[{overall_pct:.2f}%] {bar}"
         
         # Combine both lines
         progress_message = f"{status_line}\n{progress_line}"
@@ -259,7 +259,7 @@ class ProgressTracker:
             
             if progress is not None:
                 updates.append(f"progress = ${param_idx}")
-                params.append(round(progress, 1))  # Round to 0.1%
+                params.append(round(progress, 2))  # Round to 2 decimal places
                 param_idx += 1
             
             if current_stage:

@@ -77,6 +77,9 @@ async def _run_training_job_async(
             'lookback_candles': lookback_candles
         })
         
+        # Report progress during data loading
+        await progress.update(step_percentage=10.0)  # Starting data fetch
+        
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=symbol,
@@ -85,10 +88,12 @@ async def _run_training_job_async(
             lookback_candles=lookback_candles  # Now using candles directly
         )
         
+        await progress.update(step_percentage=70.0)  # Data fetched
+        
         if data is None or len(data) < 100:
             raise ValueError(f"Insufficient data: {len(data) if data is not None else 0} candles")
         
-        await progress.update(step_percentage=100.0)
+        await progress.update(step_percentage=100.0)  # Indicators calculated
         log.info(f"Data prepared: {len(data)} candles")
         
         # Step 2: Optimization (25-75%)
