@@ -99,22 +99,29 @@ async def _run_training_job_async(
             raise ValueError(f"Insufficient data: {len(data) if data is not None else 0} candles")
         
         await progress.update(step_percentage=100.0)  # Indicators calculated
-        log.info(f"Data prepared: {len(data)} candles")
+        log.info(f"✅ Data prepared: {len(data)} candles")
         
         # Step 2: Optimization (25-75%)
+        log.info("🔧 Starting optimization step...")
         await progress.start('optimization', {
             'optimizer': optimizer,
             'n_iterations': n_iterations
         })
+        log.info("✅ Progress tracker updated to optimization step")
         
         # Initialize backtest engine
+        log.info("🔧 Initializing backtest engine...")
         backtest_engine = BacktestEngine(initial_capital=10000.0)
+        log.info("✅ Backtest engine initialized")
         
         # Get parameter space
+        log.info("🔧 Getting parameter space from strategy...")
         temp_strategy = LiquiditySweepStrategy({})  # Temp instance to get parameter space
         parameter_space = temp_strategy.get_parameter_space()
+        log.info(f"✅ Parameter space obtained: {len(parameter_space)} parameters")
         
         # Select optimizer (don't pass n_iterations to __init__)
+        log.info(f"🔧 Initializing {optimizer} optimizer...")
         if optimizer == 'bayesian':
             opt = BayesianOptimizer()
         elif optimizer == 'random':
@@ -123,8 +130,10 @@ async def _run_training_job_async(
             opt = GridSearchOptimizer()
         else:
             raise ValueError(f"Unknown optimizer: {optimizer}")
+        log.info(f"✅ Optimizer initialized: {opt.__class__.__name__}")
         
         # Shared state for progress tracking
+        log.info("🔧 Setting up progress tracking...")
         import time
         import threading
         
@@ -216,6 +225,7 @@ async def _run_training_job_async(
         # Start interpolation thread
         interpolation_thread = threading.Thread(target=progress_interpolation_thread, daemon=True)
         interpolation_thread.start()
+        log.info("✅ Progress interpolation thread started")
         
         # Define progress callback for fine-grained updates
         def optimization_progress_callback(iteration: int, total: int, score: float, current_candle: int = 0, total_candles: int = 0):
@@ -327,12 +337,16 @@ async def _run_training_job_async(
             except Exception as e:
                 log.error(f"❌ Error in callback: {e}", exc_info=True)
         
+        log.info("✅ Progress callback defined")
+        
         # Run optimization with all required parameters
         # Run in executor to avoid blocking the event loop
+        log.info(f"🚀 Starting {optimizer} optimization with {n_iterations} iterations...")
         import concurrent.futures
         loop = asyncio.get_event_loop()
         
         with concurrent.futures.ThreadPoolExecutor() as executor:
+            log.info("✅ ThreadPoolExecutor created, submitting optimization task...")
             if optimizer == 'bayesian':
                 # BayesianOptimizer uses n_calls instead of n_iterations
                 result = await loop.run_in_executor(
