@@ -4,10 +4,13 @@ RandomSearchOptimizer - Monte Carlo Parameter Sampling
 Randomly samples parameter combinations from the search space.
 Often finds good solutions much faster than grid search.
 
+Supports parallel evaluation across multiple CPU cores for faster results.
+
 Best for:
 - Large parameter spaces
 - When you want quick results
 - Exploration before refined optimization
+- Parallel execution (unlike Bayesian which is sequential)
 
 Research shows random search often outperforms grid search with
 fewer evaluations (Bergstra & Bengio, 2012).
@@ -18,8 +21,10 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Union, Callable, Optional
 import logging
 from tqdm import tqdm
+from joblib import Parallel, delayed
 
 from ..backtest_engine import BacktestEngine, BacktestResult
+from ..utils.cpu_config import get_cached_training_workers
 
 log = logging.getLogger(__name__)
 
@@ -72,10 +77,11 @@ class RandomSearchOptimizer:
         n_iterations: int = 100,
         objective: str = 'sharpe_ratio',
         min_trades: int = 10,
-        progress_callback: Optional[Callable[[int, int, float], None]] = None
+        progress_callback: Optional[Callable[[int, int, float], None]] = None,
+        n_jobs: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Run random search optimization.
+        Run random search optimization with optional parallel evaluation.
         
         Args:
             backtest_engine: BacktestEngine instance
@@ -97,57 +103,88 @@ class RandomSearchOptimizer:
             n_iterations: Number of random samples to test
             objective: Metric to maximize
             min_trades: Minimum trades required for valid configuration
+            n_jobs: Number of parallel jobs (-1 = all cores, None = auto-detect with safety margin)
         
         Returns:
             Dict with best_parameters, best_score, best_metrics, all_results, search_stats
         """
-        log.info(f"Starting Random Search: {n_iterations} iterations")
+        # Determine number of parallel jobs
+        if n_jobs is None:
+            n_jobs = get_cached_training_workers()  # Auto-detect with safety margin
+        elif n_jobs == -1:
+            n_jobs = get_cached_training_workers()  # Use all available (with margin)
+        
+        use_parallel = n_jobs > 1
+        
+        log.info(
+            f"Starting Random Search: {n_iterations} iterations "
+            f"{'in parallel' if use_parallel else 'sequentially'} "
+            f"({n_jobs} worker{'s' if n_jobs > 1 else ''})"
+        )
         
         # Validate parameter space
         self._validate_parameter_space(parameter_space)
         
-        # Sample random configurations
-        results = []
-        tested_configs = set()  # Avoid duplicates
+        # Sample all configurations upfront for parallel execution
+        all_params = []
+        tested_configs = set()
         
-        iterator = tqdm(range(n_iterations), desc="Random Search") if self.verbose else range(n_iterations)
-        
-        for i in iterator:
-            # Sample random parameters
+        for _ in range(n_iterations):
             params = self._sample_parameters(parameter_space)
-            
-            # Convert to hashable for duplicate check
             params_hash = self._hash_params(params)
-            if params_hash in tested_configs:
-                continue
-            tested_configs.add(params_hash)
             
+            if params_hash not in tested_configs:
+                tested_configs.add(params_hash)
+                all_params.append(params)
+        
+        log.info(f"Generated {len(all_params)} unique configurations")
+        
+        # Define evaluation function
+        def evaluate_config(params_tuple):
+            """Evaluate a single parameter configuration."""
+            i, params = params_tuple
             try:
-                # Create strategy instance
                 strategy = strategy_class(params)
-                
-                # Run backtest
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
                     strategy_instance=strategy
                 )
                 
-                # Record results
                 if backtest_result.metrics['total_trades'] >= min_trades:
                     objective_value = backtest_result.metrics.get(objective, 0)
-                    results.append({
+                    
+                    # Call progress callback if provided (only in non-parallel mode)
+                    if not use_parallel and progress_callback:
+                        progress_callback(i + 1, n_iterations, objective_value)
+                    
+                    return {
                         'parameters': params.copy(),
                         'metrics': backtest_result.metrics,
                         'objective_value': objective_value
-                    })
-                    
-                    # Call progress callback if provided
-                    if progress_callback:
-                        progress_callback(i + 1, n_iterations, objective_value)
+                    }
+                return None
                 
             except Exception as e:
                 log.debug(f"Backtest failed for params {params}: {e}")
-                continue
+                return None
+        
+        # Execute evaluations (parallel or sequential)
+        if use_parallel:
+            log.info(f"Running parallel evaluation with {n_jobs} workers...")
+            results = Parallel(n_jobs=n_jobs, backend='loky', verbose=0)(
+                delayed(evaluate_config)((i, params)) 
+                for i, params in enumerate(all_params)
+            )
+            # Filter out None results
+            results = [r for r in results if r is not None]
+        else:
+            log.info("Running sequential evaluation...")
+            iterator = tqdm(enumerate(all_params), desc="Random Search", total=len(all_params)) if self.verbose else enumerate(all_params)
+            results = []
+            for i, params in iterator:
+                result = evaluate_config((i, params))
+                if result is not None:
+                    results.append(result)
         
         if not results:
             raise ValueError(

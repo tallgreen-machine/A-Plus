@@ -227,7 +227,7 @@ async def submit_training_job(request: TrainingJobCreate):
             request.lookback_days,
             request.n_iterations,
             True,  # run_validation
-            job_timeout=1800  # 30 minutes
+            job_timeout=43200  # 12 hours - allows for large datasets (60+ days, 17k+ candles)
         )
         
         # Update with RQ job ID

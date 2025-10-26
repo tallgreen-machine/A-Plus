@@ -15,6 +15,10 @@ Best for:
 Typically finds near-optimal solutions in 50-200 evaluations vs.
 thousands required by grid search.
 
+Note: Bayesian optimization is inherently SEQUENTIAL - each iteration depends
+on previous results to decide where to search next. For parallel execution,
+use RandomSearchOptimizer instead.
+
 Requires: scikit-optimize (pip install scikit-optimize)
 """
 
