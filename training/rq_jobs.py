@@ -271,6 +271,7 @@ async def _run_training_job_async(
                 )
             elif optimizer == 'random':
                 # RandomSearchOptimizer uses n_iterations
+                # Force n_jobs=1 to enable candle-level progress callbacks
                 result = await loop.run_in_executor(
                     executor,
                     lambda: opt.optimize(
@@ -281,7 +282,8 @@ async def _run_training_job_async(
                         n_iterations=n_iterations,
                         objective='sharpe_ratio',
                         min_trades=10,
-                        progress_callback=optimization_progress_callback
+                        progress_callback=optimization_progress_callback,
+                        n_jobs=1  # Sequential execution for progress updates
                     )
                 )
             else:
