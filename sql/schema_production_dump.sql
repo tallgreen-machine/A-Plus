@@ -14,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict C6tHVQKeckSFsJ7JVQA8AIYSlw4roa48ZGzaY5JRCgtUCJQBrWGxx5psObkHEL7
+\restrict jEr8uAcE3ioyPpAmcDm21SKTNDx5ZhD8w1dmJZ6AtMy3vkuQk97WcY0HcEFxQlO
 
 -- Dumped from database version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
 -- Dumped by pg_dump version 17.6 (Ubuntu 17.6-0ubuntu0.25.04.1)
@@ -62,6 +62,91 @@ $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: strategies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategies (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    description text,
+    category character varying(100),
+    implementation_class character varying(255),
+    is_active boolean DEFAULT true,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    created_by integer,
+    version character varying(50) DEFAULT '1.0'::character varying,
+    min_confidence numeric(4,3) DEFAULT 0.5,
+    max_risk_per_trade numeric(4,3) DEFAULT 0.02
+);
+
+
+--
+-- Name: TABLE strategies; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategies IS 'Pattern definitions and metadata';
+
+
+--
+-- Name: strategy_performance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.strategy_performance (
+    id integer NOT NULL,
+    strategy_id integer,
+    user_id integer,
+    symbol character varying(255),
+    timeframe character varying(10),
+    total_trades integer DEFAULT 0,
+    winning_trades integer DEFAULT 0,
+    losing_trades integer DEFAULT 0,
+    win_rate numeric(6,4),
+    avg_win numeric(18,8),
+    avg_loss numeric(18,8),
+    profit_factor numeric(8,4),
+    total_pnl numeric(18,8) DEFAULT 0,
+    max_consecutive_wins integer DEFAULT 0,
+    max_consecutive_losses integer DEFAULT 0,
+    avg_trade_duration_minutes integer,
+    max_drawdown numeric(18,8),
+    max_drawdown_percent numeric(6,4),
+    sharpe_ratio numeric(8,4),
+    sortino_ratio numeric(8,4),
+    first_trade_at timestamp with time zone,
+    last_trade_at timestamp with time zone,
+    last_updated timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    status character varying(20) DEFAULT 'ACTIVE'::character varying,
+    CONSTRAINT pattern_performance_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'PAUSED'::character varying, 'PAPER_TRADING'::character varying, 'DISABLED'::character varying])::text[])))
+);
+
+
+--
+-- Name: TABLE strategy_performance; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.strategy_performance IS 'Performance tracking for patterns by symbol and timeframe';
+
+
+--
+-- Name: active_strategies_summary; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.active_strategies_summary AS
+ SELECT s.id,
+    s.name,
+    s.category,
+    count(DISTINCT sp.symbol) AS active_symbols,
+    sum(sp.total_trades) AS total_trades,
+    avg(sp.win_rate) AS avg_win_rate,
+    sum(sp.total_pnl) AS total_pnl
+   FROM (public.strategies s
+     LEFT JOIN public.strategy_performance sp ON (((s.id = sp.strategy_id) AND ((sp.status)::text = 'ACTIVE'::text))))
+  WHERE (s.is_active = true)
+  GROUP BY s.id, s.name, s.category;
+
 
 --
 -- Name: active_trades; Type: TABLE; Schema: public; Owner: -
@@ -252,6 +337,46 @@ CREATE SEQUENCE public.equity_history_id_seq
 --
 
 ALTER SEQUENCE public.equity_history_id_seq OWNED BY public.equity_history.id;
+
+
+--
+-- Name: exchange_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.exchange_connections (
+    id integer NOT NULL,
+    user_id integer,
+    exchange character varying(100) NOT NULL,
+    api_key_encrypted text NOT NULL,
+    api_secret_encrypted text NOT NULL,
+    is_active boolean DEFAULT true,
+    is_testnet boolean DEFAULT false,
+    last_connection_test timestamp with time zone,
+    connection_status character varying(50),
+    error_message text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: exchange_connections_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.exchange_connections_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: exchange_connections_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.exchange_connections_id_seq OWNED BY public.exchange_connections.id;
 
 
 --
@@ -564,46 +689,6 @@ ALTER SEQUENCE public.pattern_parameters_id_seq OWNED BY public.strategy_paramet
 
 
 --
--- Name: strategy_performance; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.strategy_performance (
-    id integer NOT NULL,
-    strategy_id integer,
-    user_id integer,
-    symbol character varying(255),
-    timeframe character varying(10),
-    total_trades integer DEFAULT 0,
-    winning_trades integer DEFAULT 0,
-    losing_trades integer DEFAULT 0,
-    win_rate numeric(6,4),
-    avg_win numeric(18,8),
-    avg_loss numeric(18,8),
-    profit_factor numeric(8,4),
-    total_pnl numeric(18,8) DEFAULT 0,
-    max_consecutive_wins integer DEFAULT 0,
-    max_consecutive_losses integer DEFAULT 0,
-    avg_trade_duration_minutes integer,
-    max_drawdown numeric(18,8),
-    max_drawdown_percent numeric(6,4),
-    sharpe_ratio numeric(8,4),
-    sortino_ratio numeric(8,4),
-    first_trade_at timestamp with time zone,
-    last_trade_at timestamp with time zone,
-    last_updated timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    status character varying(20) DEFAULT 'ACTIVE'::character varying,
-    CONSTRAINT pattern_performance_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'PAUSED'::character varying, 'PAPER_TRADING'::character varying, 'DISABLED'::character varying])::text[])))
-);
-
-
---
--- Name: TABLE strategy_performance; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.strategy_performance IS 'Performance tracking for patterns by symbol and timeframe';
-
-
---
 -- Name: pattern_performance_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -717,33 +802,6 @@ CREATE SEQUENCE public.pattern_training_results_id_seq
 --
 
 ALTER SEQUENCE public.pattern_training_results_id_seq OWNED BY public.strategy_training_results.id;
-
-
---
--- Name: strategies; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.strategies (
-    id integer NOT NULL,
-    name character varying(255) NOT NULL,
-    description text,
-    category character varying(100),
-    implementation_class character varying(255),
-    is_active boolean DEFAULT true,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    created_by integer,
-    version character varying(50) DEFAULT '1.0'::character varying,
-    min_confidence numeric(4,3) DEFAULT 0.5,
-    max_risk_per_trade numeric(4,3) DEFAULT 0.02
-);
-
-
---
--- Name: TABLE strategies; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.strategies IS 'Pattern definitions and metadata';
 
 
 --
@@ -935,6 +993,17 @@ ALTER SEQUENCE public.portfolio_snapshots_id_seq OWNED BY public.portfolio_snaps
 
 
 --
+-- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.schema_migrations (
+    version character varying(20) NOT NULL,
+    description text,
+    applied_at timestamp without time zone DEFAULT now()
+);
+
+
+--
 -- Name: symbol_status; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -965,6 +1034,39 @@ CREATE SEQUENCE public.symbol_status_id_seq
 --
 
 ALTER SEQUENCE public.symbol_status_id_seq OWNED BY public.symbol_status.id;
+
+
+--
+-- Name: system_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.system_settings (
+    id integer NOT NULL,
+    key character varying(255) NOT NULL,
+    value jsonb NOT NULL,
+    description text,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: system_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.system_settings_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: system_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
 
 
 --
@@ -1190,6 +1292,7 @@ CREATE TABLE public.trained_configurations (
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     last_activated_at timestamp with time zone,
     last_deactivated_at timestamp with time zone,
+    metadata_json jsonb,
     CONSTRAINT valid_regime CHECK (((regime)::text = ANY ((ARRAY['bull'::character varying, 'bear'::character varying, 'sideways'::character varying, 'volatile'::character varying])::text[]))),
     CONSTRAINT valid_status CHECK (((status)::text = ANY ((ARRAY['DISCOVERY'::character varying, 'VALIDATION'::character varying, 'MATURE'::character varying, 'DECAY'::character varying, 'PAPER'::character varying])::text[]))),
     CONSTRAINT valid_timeframe CHECK (((timeframe)::text = ANY ((ARRAY['1m'::character varying, '5m'::character varying, '15m'::character varying, '1h'::character varying, '4h'::character varying, '1d'::character varying])::text[])))
@@ -1222,7 +1325,7 @@ CREATE TABLE public.training_jobs (
     progress_pct numeric DEFAULT 0,
     current_iteration integer DEFAULT 0,
     total_iterations integer,
-    created_at timestamp without time zone DEFAULT now(),
+    submitted_at timestamp without time zone DEFAULT now(),
     started_at timestamp without time zone,
     completed_at timestamp without time zone,
     duration_seconds integer,
@@ -1234,8 +1337,21 @@ CREATE TABLE public.training_jobs (
     error_trace text,
     created_by text,
     metadata jsonb,
+    config_id uuid,
+    rq_job_id character varying(255),
+    progress numeric(5,2) DEFAULT 0.0,
+    strategy_name character varying(100),
+    pair character varying(20),
+    regime character varying(20) DEFAULT 'sideways'::character varying,
+    current_episode integer,
+    total_episodes integer,
+    current_reward numeric(10,4),
+    current_loss numeric(10,4),
+    current_stage character varying(50),
+    lookback_candles integer,
+    CONSTRAINT training_jobs_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric))),
     CONSTRAINT valid_optimizer CHECK ((optimizer = ANY (ARRAY['grid'::text, 'random'::text, 'bayesian'::text]))),
-    CONSTRAINT valid_status CHECK ((status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text, 'COMPLETED'::text, 'FAILED'::text, 'CANCELLED'::text])))
+    CONSTRAINT valid_status CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text, 'PENDING'::text, 'RUNNING'::text, 'COMPLETED'::text, 'FAILED'::text, 'CANCELLED'::text])))
 );
 
 
@@ -1282,6 +1398,13 @@ COMMENT ON COLUMN public.training_jobs.best_config_id IS 'Foreign key to trained
 
 
 --
+-- Name: COLUMN training_jobs.lookback_candles; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_jobs.lookback_candles IS 'Number of candles for training data (replaces lookback_days for consistency across timeframes)';
+
+
+--
 -- Name: training_jobs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -1299,6 +1422,85 @@ CREATE SEQUENCE public.training_jobs_id_seq
 --
 
 ALTER SEQUENCE public.training_jobs_id_seq OWNED BY public.training_jobs.id;
+
+
+--
+-- Name: training_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.training_logs (
+    id integer NOT NULL,
+    job_id integer NOT NULL,
+    "timestamp" timestamp with time zone NOT NULL,
+    message text NOT NULL,
+    progress numeric(5,2),
+    log_level character varying(20) DEFAULT 'INFO'::character varying,
+    created_at timestamp with time zone DEFAULT now(),
+    CONSTRAINT training_logs_log_level_check CHECK (((log_level)::text = ANY ((ARRAY['DEBUG'::character varying, 'INFO'::character varying, 'WARNING'::character varying, 'ERROR'::character varying, 'SUCCESS'::character varying])::text[]))),
+    CONSTRAINT training_logs_progress_check CHECK (((progress >= (0)::numeric) AND (progress <= (100)::numeric)))
+);
+
+
+--
+-- Name: TABLE training_logs; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.training_logs IS 'Persistent storage for training job logs - keeps last 7 days or 100 most recent jobs';
+
+
+--
+-- Name: COLUMN training_logs.job_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_logs.job_id IS 'Foreign key to training_jobs.id';
+
+
+--
+-- Name: COLUMN training_logs."timestamp"; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_logs."timestamp" IS 'When the log entry was generated (from training process)';
+
+
+--
+-- Name: COLUMN training_logs.message; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_logs.message IS 'Log message content (progress updates, completions, errors)';
+
+
+--
+-- Name: COLUMN training_logs.progress; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_logs.progress IS 'Overall training progress percentage at time of log entry';
+
+
+--
+-- Name: COLUMN training_logs.log_level; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.training_logs.log_level IS 'Severity level: DEBUG, INFO, WARNING, ERROR, SUCCESS';
+
+
+--
+-- Name: training_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.training_logs_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: training_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.training_logs_id_seq OWNED BY public.training_logs.id;
 
 
 --
@@ -1344,6 +1546,69 @@ CREATE SEQUENCE public.training_progress_id_seq
 --
 
 ALTER SEQUENCE public.training_progress_id_seq OWNED BY public.training_progress.id;
+
+
+--
+-- Name: users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.users (
+    id integer NOT NULL,
+    username character varying(255) NOT NULL,
+    email character varying(255),
+    password_hash character varying(255) NOT NULL,
+    display_name character varying(255),
+    is_active boolean DEFAULT true,
+    is_admin boolean DEFAULT false,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+--
+-- Name: TABLE users; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.users IS 'User accounts for multi-tenant trading platform';
+
+
+--
+-- Name: COLUMN users.password_hash; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.users.password_hash IS 'BCrypt hashed password';
+
+
+--
+-- Name: user_portfolio_summary; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.user_portfolio_summary AS
+ SELECT u.id AS user_id,
+    u.username,
+    ps.total_equity,
+    ps.unrealized_pnl,
+    ps.realized_pnl,
+    count(h.id) AS active_positions,
+    count(t.id) AS total_trades
+   FROM (((public.users u
+     LEFT JOIN LATERAL ( SELECT portfolio_snapshots.id,
+            portfolio_snapshots.user_id,
+            portfolio_snapshots."timestamp",
+            portfolio_snapshots.total_equity,
+            portfolio_snapshots.cash_balance,
+            portfolio_snapshots.unrealized_pnl,
+            portfolio_snapshots.realized_pnl,
+            portfolio_snapshots.total_pnl,
+            portfolio_snapshots.position_count,
+            portfolio_snapshots.market_value
+           FROM public.portfolio_snapshots
+          WHERE (portfolio_snapshots.user_id = u.id)
+          ORDER BY portfolio_snapshots."timestamp" DESC
+         LIMIT 1) ps ON (true))
+     LEFT JOIN public.holdings h ON ((u.id = h.user_id)))
+     LEFT JOIN public.trades t ON ((u.id = t.user_id)))
+  GROUP BY u.id, u.username, ps.total_equity, ps.unrealized_pnl, ps.realized_pnl;
 
 
 --
@@ -1445,34 +1710,36 @@ ALTER SEQUENCE public.user_sessions_id_seq OWNED BY public.user_sessions.id;
 
 
 --
--- Name: users; Type: TABLE; Schema: public; Owner: -
+-- Name: user_settings; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public.users (
+CREATE TABLE public.user_settings (
     id integer NOT NULL,
-    username character varying(255) NOT NULL,
-    email character varying(255),
-    password_hash character varying(255) NOT NULL,
-    display_name character varying(255),
-    is_active boolean DEFAULT true,
-    is_admin boolean DEFAULT false,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    user_id integer,
+    key character varying(255) NOT NULL,
+    value jsonb NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
 
 --
--- Name: TABLE users; Type: COMMENT; Schema: public; Owner: -
+-- Name: user_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.users IS 'User accounts for multi-tenant trading platform';
+CREATE SEQUENCE public.user_settings_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 
 
 --
--- Name: COLUMN users.password_hash; Type: COMMENT; Schema: public; Owner: -
+-- Name: user_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.users.password_hash IS 'BCrypt hashed password';
+ALTER SEQUENCE public.user_settings_id_seq OWNED BY public.user_settings.id;
 
 
 --
@@ -1539,6 +1806,13 @@ ALTER TABLE ONLY public.collection_runs ALTER COLUMN id SET DEFAULT nextval('pub
 --
 
 ALTER TABLE ONLY public.equity_history ALTER COLUMN id SET DEFAULT nextval('public.equity_history_id_seq'::regclass);
+
+
+--
+-- Name: exchange_connections id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_connections ALTER COLUMN id SET DEFAULT nextval('public.exchange_connections_id_seq'::regclass);
 
 
 --
@@ -1647,6 +1921,13 @@ ALTER TABLE ONLY public.symbol_status ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: system_settings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.system_settings ALTER COLUMN id SET DEFAULT nextval('public.system_settings_id_seq'::regclass);
+
+
+--
 -- Name: ticker_data id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1675,6 +1956,13 @@ ALTER TABLE ONLY public.training_jobs ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: training_logs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_logs ALTER COLUMN id SET DEFAULT nextval('public.training_logs_id_seq'::regclass);
+
+
+--
 -- Name: training_progress id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1693,6 +1981,13 @@ ALTER TABLE ONLY public.user_preferences ALTER COLUMN id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.user_sessions ALTER COLUMN id SET DEFAULT nextval('public.user_sessions_id_seq'::regclass);
+
+
+--
+-- Name: user_settings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings ALTER COLUMN id SET DEFAULT nextval('public.user_settings_id_seq'::regclass);
 
 
 --
@@ -1740,6 +2035,22 @@ ALTER TABLE ONLY public.equity_history
 
 ALTER TABLE ONLY public.equity_history
     ADD CONSTRAINT equity_history_user_id_timestamp_key UNIQUE (user_id, "timestamp");
+
+
+--
+-- Name: exchange_connections exchange_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_connections
+    ADD CONSTRAINT exchange_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: exchange_connections exchange_connections_user_id_exchange_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_connections
+    ADD CONSTRAINT exchange_connections_user_id_exchange_key UNIQUE (user_id, exchange);
 
 
 --
@@ -1820,6 +2131,14 @@ ALTER TABLE ONLY public.portfolio_history
 
 ALTER TABLE ONLY public.portfolio_snapshots
     ADD CONSTRAINT portfolio_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schema_migrations
+    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
 
 --
@@ -1927,6 +2246,22 @@ ALTER TABLE ONLY public.symbol_status
 
 
 --
+-- Name: system_settings system_settings_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.system_settings
+    ADD CONSTRAINT system_settings_key_key UNIQUE (key);
+
+
+--
+-- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.system_settings
+    ADD CONSTRAINT system_settings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ticker_data ticker_data_exchange_symbol_timestamp_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1991,6 +2326,22 @@ ALTER TABLE ONLY public.training_jobs
 
 
 --
+-- Name: training_jobs training_jobs_rq_job_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_jobs
+    ADD CONSTRAINT training_jobs_rq_job_id_key UNIQUE (rq_job_id);
+
+
+--
+-- Name: training_logs training_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_logs
+    ADD CONSTRAINT training_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: training_progress training_progress_job_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2004,14 +2355,6 @@ ALTER TABLE ONLY public.training_progress
 
 ALTER TABLE ONLY public.training_progress
     ADD CONSTRAINT training_progress_pkey PRIMARY KEY (id);
-
-
---
--- Name: trained_configurations unique_configuration; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.trained_configurations
-    ADD CONSTRAINT unique_configuration UNIQUE (strategy_name, exchange, pair, timeframe, regime);
 
 
 --
@@ -2044,6 +2387,22 @@ ALTER TABLE ONLY public.user_sessions
 
 ALTER TABLE ONLY public.user_sessions
     ADD CONSTRAINT user_sessions_session_token_key UNIQUE (session_token);
+
+
+--
+-- Name: user_settings user_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: user_settings user_settings_user_id_key_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_user_id_key_key UNIQUE (user_id, key);
 
 
 --
@@ -2092,6 +2451,13 @@ CREATE INDEX idx_current_embeddings_symbol_timestamp ON public.current_embedding
 
 
 --
+-- Name: idx_equity_history_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_equity_history_user_time ON public.equity_history USING btree (user_id, "timestamp" DESC);
+
+
+--
 -- Name: idx_equity_history_user_timestamp; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2134,6 +2500,13 @@ CREATE INDEX idx_market_data_enhanced_timeframe ON public.market_data USING btre
 
 
 --
+-- Name: idx_market_data_symbol_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_market_data_symbol_time ON public.market_data USING btree (symbol, exchange, timeframe, "timestamp" DESC);
+
+
+--
 -- Name: idx_order_book_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2152,6 +2525,13 @@ CREATE INDEX idx_order_book_spread ON public.order_book_snapshots USING btree (s
 --
 
 CREATE INDEX idx_performance_metrics_user_period ON public.performance_metrics USING btree (user_id, period_start, period_end);
+
+
+--
+-- Name: idx_portfolio_snapshots_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_portfolio_snapshots_user_time ON public.portfolio_snapshots USING btree (user_id, "timestamp" DESC);
 
 
 --
@@ -2204,6 +2584,13 @@ CREATE INDEX idx_strategy_performance_symbol_timeframe ON public.strategy_perfor
 
 
 --
+-- Name: idx_strategy_performance_user_symbol; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_strategy_performance_user_symbol ON public.strategy_performance USING btree (user_id, symbol);
+
+
+--
 -- Name: idx_strategy_regime_performance_regime; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2215,6 +2602,13 @@ CREATE INDEX idx_strategy_regime_performance_regime ON public.strategy_regime_pe
 --
 
 CREATE INDEX idx_strategy_regime_performance_strategy_user ON public.strategy_regime_performance USING btree (strategy_id, user_id);
+
+
+--
+-- Name: idx_strategy_training_results_strategy_symbol; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_strategy_training_results_strategy_symbol ON public.strategy_training_results USING btree (strategy_name, symbol);
 
 
 --
@@ -2274,6 +2668,13 @@ CREATE INDEX idx_trades_executed_at ON public.trades USING btree (executed_at DE
 
 
 --
+-- Name: idx_trades_strategy; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trades_strategy ON public.trades USING btree (strategy_id);
+
+
+--
 -- Name: idx_trades_symbol; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2285,6 +2686,20 @@ CREATE INDEX idx_trades_symbol ON public.trades USING btree (symbol);
 --
 
 CREATE INDEX idx_trades_user_id ON public.trades USING btree (user_id);
+
+
+--
+-- Name: idx_trades_user_symbol_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trades_user_symbol_time ON public.trades USING btree (user_id, symbol, executed_at DESC);
+
+
+--
+-- Name: idx_trades_user_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trades_user_time ON public.trades USING btree (user_id, executed_at DESC);
 
 
 --
@@ -2323,6 +2738,13 @@ CREATE INDEX idx_trained_configs_lifecycle ON public.trained_configurations USIN
 
 
 --
+-- Name: idx_trained_configs_metadata; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configs_metadata ON public.trained_configurations USING gin (metadata_json);
+
+
+--
 -- Name: idx_trained_configs_pair; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2358,17 +2780,31 @@ CREATE INDEX idx_trained_configs_strategy ON public.trained_configurations USING
 
 
 --
+-- Name: idx_trained_configurations_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_trained_configurations_status ON public.trained_configurations USING btree (status) WHERE ((status)::text = ANY ((ARRAY['CANDIDATE'::character varying, 'ACTIVE'::character varying])::text[]));
+
+
+--
 -- Name: idx_training_jobs_active; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_training_jobs_active ON public.training_jobs USING btree (status, created_at DESC) WHERE (status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text]));
+CREATE INDEX idx_training_jobs_active ON public.training_jobs USING btree (status, submitted_at DESC) WHERE (status = ANY (ARRAY['PENDING'::text, 'RUNNING'::text]));
+
+
+--
+-- Name: idx_training_jobs_config_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_config_id ON public.training_jobs USING btree (config_id);
 
 
 --
 -- Name: idx_training_jobs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_training_jobs_created_at ON public.training_jobs USING btree (created_at DESC);
+CREATE INDEX idx_training_jobs_created_at ON public.training_jobs USING btree (submitted_at DESC);
 
 
 --
@@ -2376,6 +2812,13 @@ CREATE INDEX idx_training_jobs_created_at ON public.training_jobs USING btree (c
 --
 
 CREATE INDEX idx_training_jobs_job_id ON public.training_jobs USING btree (job_id);
+
+
+--
+-- Name: idx_training_jobs_rq_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_rq_job_id ON public.training_jobs USING btree (rq_job_id);
 
 
 --
@@ -2393,10 +2836,38 @@ CREATE INDEX idx_training_jobs_strategy ON public.training_jobs USING btree (str
 
 
 --
+-- Name: idx_training_jobs_submitted_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_jobs_submitted_at ON public.training_jobs USING btree (submitted_at);
+
+
+--
 -- Name: idx_training_jobs_symbol_exchange; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_training_jobs_symbol_exchange ON public.training_jobs USING btree (symbol, exchange);
+
+
+--
+-- Name: idx_training_logs_job_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_logs_job_id ON public.training_logs USING btree (job_id);
+
+
+--
+-- Name: idx_training_logs_job_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_logs_job_time ON public.training_logs USING btree (job_id, "timestamp");
+
+
+--
+-- Name: idx_training_logs_timestamp; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_training_logs_timestamp ON public.training_logs USING btree ("timestamp" DESC);
 
 
 --
@@ -2483,6 +2954,22 @@ ALTER TABLE ONLY public.active_trades
 
 ALTER TABLE ONLY public.equity_history
     ADD CONSTRAINT equity_history_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: exchange_connections exchange_connections_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.exchange_connections
+    ADD CONSTRAINT exchange_connections_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: training_jobs fk_config_id; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_jobs
+    ADD CONSTRAINT fk_config_id FOREIGN KEY (config_id) REFERENCES public.trained_configurations(id) ON DELETE CASCADE;
 
 
 --
@@ -2582,6 +3069,14 @@ ALTER TABLE ONLY public.trades
 
 
 --
+-- Name: training_logs training_logs_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.training_logs
+    ADD CONSTRAINT training_logs_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.training_jobs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: user_preferences user_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2598,8 +3093,16 @@ ALTER TABLE ONLY public.user_sessions
 
 
 --
+-- Name: user_settings user_settings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_settings
+    ADD CONSTRAINT user_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
-\unrestrict C6tHVQKeckSFsJ7JVQA8AIYSlw4roa48ZGzaY5JRCgtUCJQBrWGxx5psObkHEL7
+\unrestrict jEr8uAcE3ioyPpAmcDm21SKTNDx5ZhD8w1dmJZ6AtMy3vkuQk97WcY0HcEFxQlO
 
