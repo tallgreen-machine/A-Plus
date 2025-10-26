@@ -132,100 +132,16 @@ async def _run_training_job_async(
             raise ValueError(f"Unknown optimizer: {optimizer}")
         log.info(f"✅ Optimizer initialized: {opt.__class__.__name__}")
         
-        # Shared state for progress tracking
+        # Shared state for progress tracking (no interpolation thread - relying on real callbacks)
         log.info("🔧 Setting up progress tracking...")
         import time
-        import threading
         
         progress_state = {
             'iteration': 0,
             'total': n_iterations,
             'score': 0.0,
-            'last_update_pct': 0.0,
-            'running': True,
-            'last_iteration_time': time.time(),
-            'avg_iteration_duration': 5.0  # Initial estimate
+            'last_update_pct': 0.0
         }
-        
-        # Background thread that interpolates progress between iterations
-        def progress_interpolation_thread():
-            """Update progress smoothly between iterations"""
-            import psycopg2
-            import os
-            
-            while progress_state['running']:
-                try:
-                    current_iteration = progress_state['iteration']
-                    total = progress_state['total']
-                    
-                    if current_iteration == 0 or current_iteration >= total:
-                        time.sleep(0.5)
-                        continue
-                    
-                    # Calculate time since last iteration
-                    elapsed = time.time() - progress_state['last_iteration_time']
-                    avg_duration = progress_state['avg_iteration_duration']
-                    
-                    # Estimate progress within current iteration (0-1)
-                    if avg_duration > 0:
-                        sub_iteration_progress = min(elapsed / avg_duration, 0.99)
-                    else:
-                        sub_iteration_progress = 0.5
-                    
-                    # Calculate interpolated iteration count
-                    interpolated_iteration = current_iteration + sub_iteration_progress
-                    step_pct = (interpolated_iteration / total) * 100
-                    
-                    # Calculate overall percentage
-                    previous_weight = 0.25  # data_preparation step
-                    current_contribution = 0.50 * (step_pct / 100.0)  # optimization step is 50% of total
-                    overall_pct = (previous_weight + current_contribution) * 100
-                    
-                    # Only update if changed by at least 0.1%
-                    if abs(overall_pct - progress_state['last_update_pct']) >= 0.1:
-                        progress_state['last_update_pct'] = overall_pct
-                        
-                        # Update database
-                        db_host = os.getenv('DB_HOST', 'localhost')
-                        db_port = os.getenv('DB_PORT', '5432')
-                        db_user = os.getenv('DB_USER', 'traduser')
-                        db_pass = os.getenv('DB_PASSWORD', 'TRAD123!')
-                        db_name = os.getenv('DB_NAME', 'trad')
-                        
-                        conn = psycopg2.connect(
-                            host=db_host, port=db_port, user=db_user,
-                            password=db_pass, dbname=db_name
-                        )
-                        cur = conn.cursor()
-                        cur.execute("""
-                            UPDATE training_jobs
-                            SET progress = %s,
-                                current_episode = %s,
-                                total_episodes = %s,
-                                current_stage = 'Training'
-                            WHERE id = %s
-                        """, (
-                            round(overall_pct, 2),  # Changed to 2 decimal places
-                            int(interpolated_iteration),
-                            total,
-                            int(job_id)
-                        ))
-                        conn.commit()
-                        cur.close()
-                        conn.close()
-                        
-                        log.info(f"🔄 Interpolated progress: {overall_pct:.2f}% (iter {interpolated_iteration:.1f}/{total})")  # Changed to 2 decimal places
-                
-                except Exception as e:
-                    log.error(f"❌ Interpolation error: {e}")
-                
-                # Update every 500ms
-                time.sleep(0.5)
-        
-        # Start interpolation thread
-        interpolation_thread = threading.Thread(target=progress_interpolation_thread, daemon=True)
-        interpolation_thread.start()
-        log.info("✅ Progress interpolation thread started")
         
         # Define progress callback for fine-grained updates
         def optimization_progress_callback(iteration: int, total: int, score: float, current_candle: int = 0, total_candles: int = 0):
@@ -240,19 +156,10 @@ async def _run_training_job_async(
                 total_candles: Total candles in dataset
             """
             try:
-                # Update timing for interpolation
-                current_time = time.time()
-                if progress_state['iteration'] > 0:
-                    duration = current_time - progress_state['last_iteration_time']
-                    # Exponential moving average
-                    progress_state['avg_iteration_duration'] = (
-                        0.7 * progress_state['avg_iteration_duration'] + 0.3 * duration
-                    )
-                
+                # Update progress state
                 progress_state['iteration'] = iteration
                 progress_state['total'] = total
                 progress_state['score'] = score
-                progress_state['last_iteration_time'] = current_time
                 
                 # Calculate percentage within THIS STEP (optimization is 25-75%, so 50% of total)
                 step_pct = (iteration / total) * 100
@@ -271,8 +178,8 @@ async def _run_training_job_async(
                 else:
                     log.info(f"🔔 Callback: iter {iteration}/{total} ({step_pct:.2f}%), score={score:.4f}")
                 
-                # Update DB every 0.1% for fine-grained progress
-                if abs(step_pct - progress_state['last_update_pct']) >= 0.1 or iteration == total:
+                # Update DB more frequently now (every 0.05% instead of 0.1%)
+                if abs(step_pct - progress_state['last_update_pct']) >= 0.05 or iteration == total:
                     progress_state['last_update_pct'] = step_pct
                     
                     log.info(f"💾 Updating DB: step_pct={step_pct:.2f}%")
