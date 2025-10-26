@@ -324,6 +324,7 @@ async def cancel_training_job(job_id: str):
     - Running jobs: cancelled and marked as cancelled
     - Automatically kills worker process and cleans up orphaned state
     """
+    log.info(f"========== CANCEL ENDPOINT CALLED FOR JOB {job_id} ==========")
     try:
         conn = await asyncpg.connect(get_db_url())
         
@@ -342,23 +343,89 @@ async def cancel_training_job(job_id: str):
         
         # Cancel RQ job if exists
         cancelled_rq = False
+        killed_process = False
         if job['rq_job_id']:
             try:
                 redis_conn = get_redis_connection()
                 rq_job = Job.fetch(job['rq_job_id'], connection=redis_conn)
                 
-                # Cancel the job
+                # Get the worker PID before cancelling
+                worker_name = rq_job.worker_name
+                
+                # Cancel the job in RQ
                 rq_job.cancel()
                 cancelled_rq = True
                 log.info(f"Cancelled RQ job {job['rq_job_id']}")
                 
-                # Also try to kill the worker process if it's still running
+                # Try RQ's kill method first (marks as killed in Redis)
                 try:
-                    # Send kill signal - worker should handle gracefully
                     rq_job.kill()
-                    log.info(f"Killed RQ job worker process for {job['rq_job_id']}")
+                    log.info(f"Sent kill signal via RQ for {job['rq_job_id']}")
                 except Exception as kill_error:
-                    log.debug(f"Could not kill worker process (may have already stopped): {kill_error}")
+                    log.debug(f"RQ kill signal failed: {kill_error}")
+                
+                # Now actually kill the OS process
+                # Find and kill any child Python processes related to training
+                log.info(f"===== ATTEMPTING TO KILL WORKER PROCESSES FOR JOB {job['rq_job_id']} =====")
+                try:
+                    import subprocess
+                    # Find training worker child processes using pgrep (with absolute path)
+                    log.info("Running pgrep to find training worker processes...")
+                    result = subprocess.run(
+                        ["/usr/bin/pgrep", "-f", "training/worker.py"],
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if result.returncode == 0 and result.stdout.strip():
+                        pids = result.stdout.strip().split('\n')
+                        log.info(f"Found {len(pids)} training worker PIDs: {pids}")
+                        
+                        for pid in pids:
+                            try:
+                                # Check CPU usage using ps with absolute path
+                                ps_result = subprocess.run(
+                                    ["/usr/bin/ps", "-p", pid, "-o", "pid=,pcpu=,args="],
+                                    capture_output=True,
+                                    text=True
+                                )
+                                
+                                if ps_result.returncode == 0:
+                                    output = ps_result.stdout.strip()
+                                    log.info(f"PID {pid} ps output: {output}")
+                                    
+                                    if output and "training/worker.py" in output:
+                                        parts = output.split()
+                                        log.info(f"PID {pid} parts: {parts}")
+                                        
+                                        if len(parts) >= 2:
+                                            try:
+                                                cpu_usage = float(parts[1])
+                                                log.info(f"PID {pid} CPU usage: {cpu_usage}%")
+                                                
+                                                if cpu_usage > 50.0:
+                                                    # Kill the child process using absolute path
+                                                    log.info(f"Killing high-CPU process PID {pid}")
+                                                    subprocess.run(["/usr/bin/kill", "-9", pid], check=True)
+                                                    killed_process = True
+                                                    log.info(f"✓ Killed training worker process PID {pid} (CPU: {cpu_usage}%)")
+                                            except ValueError as ve:
+                                                log.warning(f"Could not parse CPU for PID {pid}: {ve}")
+                            except Exception as pid_error:
+                                log.warning(f"Could not process PID {pid}: {pid_error}")
+                    else:
+                        log.info("No training worker processes found via pgrep")
+                
+                except Exception as proc_error:
+                    log.error(f"Failed to kill worker processes: {proc_error}", exc_info=True)
+                
+                # If we killed a process, restart the worker service for clean state
+                if killed_process:
+                    try:
+                        subprocess.run(["/usr/bin/systemctl", "restart", "trad-worker.service"], check=True)
+                        log.info("Restarted trad-worker.service after killing process")
+                    except Exception as restart_error:
+                        log.error(f"Failed to restart worker service: {restart_error}")
                 
             except Exception as e:
                 log.warning(f"Failed to cancel RQ job {job['rq_job_id']}: {e}")
@@ -397,12 +464,16 @@ async def cancel_training_job(job_id: str):
         except Exception as cleanup_error:
             log.warning(f"Post-cancellation cleanup warning: {cleanup_error}")
         
+        # Note: Worker service restart happens above after killing process
+        # No need for duplicate restart here
+        
         await conn.close()
         
         return {
             "success": True, 
             "message": message,
-            "rq_cancelled": cancelled_rq
+            "rq_cancelled": cancelled_rq,
+            "process_killed": killed_process
         }
         
     except HTTPException:
