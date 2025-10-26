@@ -178,8 +178,17 @@ async def _run_training_job_async(
                 else:
                     log.info(f"🔔 Callback: iter {iteration}/{total} ({step_pct:.2f}%), score={score:.4f}")
                 
-                # Update DB more frequently now (every 0.05% instead of 0.1%)
-                if abs(step_pct - progress_state['last_update_pct']) >= 0.05 or iteration == total:
+                # Update DB on every callback (no threshold check for smoother updates)
+                # Only skip if this is a duplicate (same step_pct and candle)
+                needs_update = False
+                if total_candles > 0 and current_candle > 0:
+                    # Candle update - always update for real-time display
+                    needs_update = True
+                elif abs(step_pct - progress_state['last_update_pct']) >= 0.01 or iteration == total:
+                    # Episode complete update - only if progress changed by 0.01%
+                    needs_update = True
+                
+                if needs_update:
                     progress_state['last_update_pct'] = step_pct
                     
                     log.info(f"💾 Updating DB: step_pct={step_pct:.2f}%")

@@ -120,8 +120,17 @@ class LiquiditySweepStrategy:
         
         # Step 3: Detect liquidity sweeps
         signals = []
+        total_candles = len(df) - self.key_level_lookback
         
-        for idx in range(self.key_level_lookback, len(df)):
+        # Pre-calculate price ranges for faster level filtering
+        price_tolerance = df['atr'].median() * 3  # Only check levels within 3 ATR
+        
+        for i, idx in enumerate(range(self.key_level_lookback, len(df))):
+            # Log progress every 500 candles
+            if i > 0 and i % 500 == 0:
+                pct = (i / total_candles) * 100
+                log.info(f"  Signal generation: {i}/{total_candles} ({pct:.1f}%)")
+            
             row = df.iloc[idx]
             prev_rows = df.iloc[max(0, idx - 10):idx]
             
@@ -132,8 +141,13 @@ class LiquiditySweepStrategy:
                 'take_profit': 0.0
             }
             
-            # Check for liquidity sweep at each key level
-            for level in key_levels:
+            # Filter key levels to only those near current price (optimization)
+            price_min = row['close'] - price_tolerance
+            price_max = row['close'] + price_tolerance
+            relevant_levels = [lvl for lvl in key_levels if price_min <= lvl.price <= price_max]
+            
+            # Check for liquidity sweep at each relevant key level
+            for level in relevant_levels:
                 # LONG setup: Pierce below support, then reverse up
                 if level.type == 'SUPPORT':
                     sweep = self._detect_long_sweep(
