@@ -102,7 +102,8 @@ class BacktestEngine:
         self,
         data: pd.DataFrame,
         strategy_instance: Any,
-        position_size_pct: float = 1.0
+        position_size_pct: float = 1.0,
+        progress_callback: Optional[callable] = None
     ) -> BacktestResult:
         """
         Run backtest simulation.
@@ -112,6 +113,8 @@ class BacktestEngine:
                   Required columns: timestamp, open, high, low, close, volume, atr
             strategy_instance: Strategy object with generate_signals() method
             position_size_pct: Position sizing multiplier (1.0 = full risk_per_trade)
+            progress_callback: Optional callback function(current_candle, total_candles)
+                               Called every 50 candles during simulation
         
         Returns:
             BacktestResult with trades, metrics, equity curve
@@ -132,7 +135,8 @@ class BacktestEngine:
             data=data,
             signals=signals,
             strategy_params=strategy_instance.params,
-            position_size_pct=position_size_pct
+            position_size_pct=position_size_pct,
+            progress_callback=progress_callback
         )
         
         # Calculate metrics
@@ -158,7 +162,8 @@ class BacktestEngine:
         data: pd.DataFrame,
         signals: pd.DataFrame,
         strategy_params: Dict[str, Any],
-        position_size_pct: float
+        position_size_pct: float,
+        progress_callback: Optional[callable] = None
     ) -> List[Trade]:
         """
         Simulate trade execution based on signals.
@@ -168,6 +173,7 @@ class BacktestEngine:
             signals: DataFrame with columns: timestamp, signal, stop_loss, take_profit
             strategy_params: Strategy parameters (for max_holding_periods)
             position_size_pct: Position size multiplier
+            progress_callback: Optional callback(current_candle, total_candles) every 50 candles
         
         Returns:
             List of executed trades
@@ -181,9 +187,17 @@ class BacktestEngine:
         df['signal'].fillna('HOLD', inplace=True)
         
         max_holding = strategy_params.get('max_holding_periods', 50)
+        total_candles = len(df)
         
         for idx, row in df.iterrows():
             timestamp = int(row['timestamp'])
+            
+            # Progress callback every 50 candles
+            if progress_callback is not None and idx % 50 == 0:
+                try:
+                    progress_callback(idx, total_candles)
+                except Exception as e:
+                    log.warning(f"Progress callback error: {e}")
             
             # Check if we have an open position
             if current_position is not None:

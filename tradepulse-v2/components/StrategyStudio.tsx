@@ -36,6 +36,8 @@ interface TrainingProgress {
     step_percentage: number;
     current_iteration?: number;
     total_iterations?: number;
+    current_candle?: number;  // NEW: Fine-grained progress
+    total_candles?: number;   // NEW: Total candles in dataset
     best_score?: number;
     current_score?: number;
     best_params?: Record<string, any>;
@@ -366,6 +368,8 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                                 progress: data.progress || 0,
                                 current_episode: data.current_episode,
                                 total_episodes: data.total_episodes,
+                                current_candle: data.current_candle,  // NEW: Candle-level progress
+                                total_candles: data.total_candles,    // NEW: Total candles
                                 current_reward: data.current_reward,
                                 current_loss: data.current_loss,
                                 stage: data.stage,

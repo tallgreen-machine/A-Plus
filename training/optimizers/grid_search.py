@@ -118,18 +118,26 @@ class GridSearchOptimizer:
                 # Create strategy instance
                 strategy = strategy_class(params)
                 
+                # Create candle-level progress callback
+                def candle_progress(current_candle, total_candles):
+                    """Called every 50 candles during backtest."""
+                    if progress_callback:
+                        # Report iteration progress + sub-iteration progress from candles
+                        progress_callback(i + 1, total_combinations, 0, current_candle, total_candles)
+                
                 # Run backtest
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy
+                    strategy_instance=strategy,
+                    progress_callback=candle_progress
                 )
                 
                 # Get objective value
                 objective_value = backtest_result.metrics.get(objective, 0)
                 
-                # Report progress via callback
+                # Report final progress (iteration complete)
                 if progress_callback:
-                    progress_callback(i + 1, total_combinations, objective_value)
+                    progress_callback(i + 1, total_combinations, objective_value, 0, 0)
                 
                 # Record results
                 if backtest_result.metrics['total_trades'] >= min_trades:

@@ -186,7 +186,7 @@ async def _run_training_job_async(
                                 current_stage = 'Training'
                             WHERE id = %s
                         """, (
-                            round(overall_pct, 1),
+                            round(overall_pct, 2),  # Changed to 2 decimal places
                             int(interpolated_iteration),
                             total,
                             int(job_id)
@@ -195,7 +195,7 @@ async def _run_training_job_async(
                         cur.close()
                         conn.close()
                         
-                        log.info(f"🔄 Interpolated progress: {overall_pct:.1f}% (iter {interpolated_iteration:.1f}/{total})")
+                        log.info(f"🔄 Interpolated progress: {overall_pct:.2f}% (iter {interpolated_iteration:.1f}/{total})")  # Changed to 2 decimal places
                 
                 except Exception as e:
                     log.error(f"❌ Interpolation error: {e}")
@@ -208,8 +208,17 @@ async def _run_training_job_async(
         interpolation_thread.start()
         
         # Define progress callback for fine-grained updates
-        def optimization_progress_callback(iteration: int, total: int, score: float):
-            """Store progress state and update database periodically (synchronous for thread safety)"""
+        def optimization_progress_callback(iteration: int, total: int, score: float, current_candle: int = 0, total_candles: int = 0):
+            """
+            Store progress state and update database with iteration + candle progress.
+            
+            Args:
+                iteration: Current iteration number
+                total: Total iterations
+                score: Current objective score
+                current_candle: Current candle being processed (0 if iteration complete)
+                total_candles: Total candles in dataset
+            """
             try:
                 # Update timing for interpolation
                 current_time = time.time()
@@ -228,21 +237,32 @@ async def _run_training_job_async(
                 # Calculate percentage within THIS STEP (optimization is 25-75%, so 50% of total)
                 step_pct = (iteration / total) * 100
                 
-                # Log every callback invocation
-                log.info(f"🔔 Callback invoked: iteration {iteration}/{total} ({step_pct:.1f}%), score={score:.4f}")
+                # Add sub-iteration progress from candles
+                if total_candles > 0 and current_candle > 0:
+                    candle_pct = (current_candle / total_candles)
+                    # This candle progress represents progress WITHIN the current iteration
+                    # So we add a fraction of the per-iteration percentage
+                    per_iteration_pct = 100.0 / total
+                    step_pct = ((iteration - 1) / total) * 100 + (candle_pct * per_iteration_pct)
+                
+                # Log with candle info if available
+                if total_candles > 0 and current_candle > 0:
+                    log.info(f"🔔 Callback: iter {iteration}/{total} ({step_pct:.2f}%), candle {current_candle}/{total_candles}, score={score:.4f}")
+                else:
+                    log.info(f"🔔 Callback: iter {iteration}/{total} ({step_pct:.2f}%), score={score:.4f}")
                 
                 # Update DB every 0.1% for fine-grained progress
                 if abs(step_pct - progress_state['last_update_pct']) >= 0.1 or iteration == total:
                     progress_state['last_update_pct'] = step_pct
                     
-                    log.info(f"💾 Updating DB: step_pct={step_pct:.1f}%")
+                    log.info(f"💾 Updating DB: step_pct={step_pct:.2f}%")
                     
                     # Use synchronous psycopg2 instead of asyncpg since we're in a thread
                     import psycopg2
                     import os
                     
                     try:
-                        # Calculate overall percentage
+                        # Calculate overall percentage (with 2 decimal places)
                         previous_weight = 0.25  # data_preparation step
                         current_contribution = 0.50 * (step_pct / 100.0)  # optimization step is 50% of total
                         overall_pct = (previous_weight + current_contribution) * 100
@@ -269,14 +289,18 @@ async def _run_training_job_async(
                             SET progress = %s,
                                 current_episode = %s,
                                 total_episodes = %s,
+                                current_candle = %s,
+                                total_candles = %s,
                                 current_reward = %s,
                                 current_loss = %s,
                                 current_stage = 'Training'
                             WHERE id = %s
                         """, (
-                            round(overall_pct, 1),
+                            round(overall_pct, 2),  # Changed to 2 decimal places
                             iteration,
                             total,
+                            current_candle if current_candle > 0 else None,
+                            total_candles if total_candles > 0 else None,
                             score if score > 0 else None,
                             abs(score) if score < 0 else None,
                             int(job_id)
@@ -286,7 +310,7 @@ async def _run_training_job_async(
                         cur.close()
                         conn.close()
                         
-                        log.info(f"✅ DB updated: {overall_pct:.1f}%")
+                        log.info(f"✅ DB updated: {overall_pct:.2f}%")  # Changed to 2 decimal places
                     except Exception as e:
                         log.error(f"❌ Failed to update DB: {e}")
                     
