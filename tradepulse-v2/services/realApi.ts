@@ -201,6 +201,7 @@ function transformConfiguration(backendConfig: any): TrainedConfiguration {
       },
     },
     created_at: backendConfig.createdAt,
+    job_id: backendConfig.jobId, // Training job ID that created this configuration
     training_settings: backendConfig.metadataJson ? {
       optimizer: backendConfig.metadataJson.optimizer,
       n_iterations: backendConfig.metadataJson.n_iterations,

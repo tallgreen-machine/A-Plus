@@ -981,15 +981,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
             {/* Resource Monitor Header */}
             <ResourceMonitor />
             
-            <header className="p-4 lg:p-6 border-b border-brand-border shrink-0">
-                <div>
-                    <h1 className="text-3xl font-bold text-brand-text-primary">Strategy Studio</h1>
-                    <p className="text-brand-text-secondary mt-1">
-                        Train strategies with machine learning optimization
-                    </p>
-                </div>
-            </header>
-            <main className="flex-1 grid grid-cols-[240px_320px_280px_1fr] gap-4 p-4 overflow-hidden">
+            <main className="flex-1 grid grid-cols-[280px_320px_280px_1fr] gap-4 p-4 overflow-hidden">
                 {/* Column 1: Strategy Selection */}
                 <div className="bg-brand-surface rounded-lg overflow-y-auto">
                     {renderStrategySidebar()}
