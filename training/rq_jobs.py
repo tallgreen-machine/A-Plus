@@ -324,7 +324,7 @@ async def _run_training_job_async(
         # Save configuration
         writer = ConfigurationWriter()
         config_id = await writer.save_configuration(
-            strategy='LIQUIDITY_SWEEP',  # Pass strategy name as string
+            strategy=strategy,  # Use the actual strategy name from job parameters
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
@@ -332,7 +332,8 @@ async def _run_training_job_async(
             parameters=best_params,
             backtest_result=backtest_result,
             validation_result=validation_result,
-            optimizer=optimizer
+            optimizer=optimizer,
+            metadata={'job_id': int(job_id)}  # Include job ID in metadata
         )
         
         await progress.complete()
