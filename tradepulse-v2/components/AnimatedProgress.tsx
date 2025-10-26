@@ -16,6 +16,8 @@ interface ProgressData {
   progress: number;
   current_episode?: number;
   total_episodes?: number;
+  current_candle?: number;
+  total_candles?: number;
   current_reward?: number;
   current_loss?: number;
   stage?: string;
@@ -42,7 +44,8 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
     if (!currentProgress || currentProgress.status !== 'running') return null;
     
     const { 
-      stage, current_episode, total_episodes, current_reward, current_loss, progress,
+      stage, current_episode, total_episodes, current_candle, total_candles,
+      current_reward, current_loss, progress,
       jobId, strategy_name, pair, exchange, timeframe, regime
     } = currentProgress;
     
@@ -52,7 +55,12 @@ const AnimatedProgress: React.FC<AnimatedProgressProps> = ({ logs, currentProgre
     // Build status line
     const parts = [stage || 'Training...'];
     if (current_episode !== undefined && total_episodes) {
-      parts.push(`Episode ${current_episode}/${total_episodes}`);
+      let episodeInfo = `Episode ${current_episode}/${total_episodes}`;
+      // Add candle progress if available
+      if (current_candle !== undefined && current_candle > 0 && total_candles) {
+        episodeInfo += ` | Candle ${current_candle}/${total_candles}`;
+      }
+      parts.push(episodeInfo);
     }
     if (current_reward != null) {
       parts.push(`Reward: ${current_reward.toFixed(2)}`);
