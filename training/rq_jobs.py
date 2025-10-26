@@ -66,6 +66,16 @@ async def _run_training_job_async(
     db_url = get_db_url()
     
     try:
+        # Set job to 'running' immediately so frontend can start monitoring
+        import asyncpg
+        conn = await asyncpg.connect(db_url)
+        await conn.execute(
+            "UPDATE training_jobs SET status = 'running', started_at = NOW() WHERE id = $1",
+            int(job_id)
+        )
+        await conn.close()
+        log.info(f"Job {job_id} status set to 'running'")
+        
         # Initialize progress tracker
         progress = ProgressTracker(job_id=job_id, db_url=db_url)
         
@@ -77,8 +87,13 @@ async def _run_training_job_async(
             'lookback_candles': lookback_candles
         })
         
+        # Give frontend time to see 0% before continuing
+        import asyncio
+        await asyncio.sleep(0.5)
+        
         # Report progress during data loading
         await progress.update(step_percentage=10.0)  # Starting data fetch
+        await asyncio.sleep(0.5)  # Let frontend see this update
         
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
@@ -89,6 +104,7 @@ async def _run_training_job_async(
         )
         
         await progress.update(step_percentage=70.0)  # Data fetched
+        await asyncio.sleep(0.5)  # Let frontend see this update
         
         if data is None or len(data) < 100:
             raise ValueError(f"Insufficient data: {len(data) if data is not None else 0} candles")
