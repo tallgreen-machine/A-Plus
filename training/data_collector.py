@@ -92,7 +92,8 @@ class DataCollector:
         symbol: str,
         exchange: str,
         timeframe: str,
-        lookback_days: int,
+        lookback_candles: int,  # Changed from lookback_days to lookback_candles
+        lookback_days: Optional[int] = None,  # Kept for backward compatibility
         end_date: Optional[datetime] = None
     ) -> pd.DataFrame:
         """
@@ -102,7 +103,8 @@ class DataCollector:
             symbol: Trading pair (e.g., 'BTC/USDT')
             exchange: Exchange name (e.g., 'binance')
             timeframe: Candlestick interval (e.g., '5m', '1h', '1d')
-            lookback_days: Days of historical data
+            lookback_candles: Number of candles of historical data (preferred)
+            lookback_days: Days of historical data (deprecated, for backward compatibility)
             end_date: End date (default: now)
         
         Returns:
@@ -118,11 +120,28 @@ class DataCollector:
         if end_date is None:
             end_date = datetime.utcnow()
         
-        start_date = end_date - timedelta(days=lookback_days)
+        # Calculate start_date from candles
+        # Timeframe to minutes mapping
+        timeframe_minutes = {
+            '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+            '1h': 60, '2h': 120, '4h': 240,
+            '1d': 1440, '1w': 10080
+        }
+        
+        minutes_per_candle = timeframe_minutes.get(timeframe)
+        if minutes_per_candle is None:
+            raise ValueError(f"Unsupported timeframe: {timeframe}")
+        
+        # Calculate lookback period in days
+        total_minutes = lookback_candles * minutes_per_candle
+        lookback_days_calculated = int(total_minutes / 1440) + 1  # Add 1 day buffer
+        
+        start_date = end_date - timedelta(days=lookback_days_calculated)
         
         log.info(
             f"Fetching {symbol} on {exchange} {timeframe} "
-            f"({start_date.date()} to {end_date.date()})"
+            f"({lookback_candles} candles ≈ {lookback_days_calculated} days, "
+            f"{start_date.date()} to {end_date.date()})"
         )
         
         # Step 1: Try database (fast)
@@ -156,7 +175,12 @@ class DataCollector:
                 f"No data available for {symbol} on {exchange} {timeframe}"
             )
         
-        # Step 3: Calculate indicators
+        # Step 3: Limit to exact candle count requested (take most recent)
+        if len(df) > lookback_candles:
+            df = df.tail(lookback_candles).reset_index(drop=True)
+            log.info(f"Limited to {lookback_candles} most recent candles")
+        
+        # Step 4: Calculate indicators
         df = self._calculate_indicators(df)
         
         log.info(
@@ -438,7 +462,8 @@ class DataCollector:
         symbol: str,
         exchange: str,
         timeframe: str,
-        lookback_days: int,
+        lookback_candles: int,
+        lookback_days: Optional[int] = None,
         end_date: Optional[datetime] = None
     ) -> pd.DataFrame:
         """
@@ -460,6 +485,7 @@ class DataCollector:
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
+                lookback_candles=lookback_candles,
                 lookback_days=lookback_days,
                 end_date=end_date
             )
@@ -471,18 +497,21 @@ async def fetch_training_data(
     symbol: str,
     exchange: str = 'binance',
     timeframe: str = '5m',
-    lookback_days: int = 90
+    lookback_candles: int = 10000,
+    lookback_days: Optional[int] = None
 ) -> pd.DataFrame:
     """
     Quick helper to fetch training data.
     
     Example:
-        df = await fetch_training_data('BTC/USDT', lookback_days=90)
+        df = await fetch_training_data('BTC/USDT', lookback_candles=10000)
+        df = await fetch_training_data('BTC/USDT', lookback_days=90)  # Legacy
     """
     collector = DataCollector()
     return await collector.fetch_ohlcv(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe,
+        lookback_candles=lookback_candles,
         lookback_days=lookback_days
     )

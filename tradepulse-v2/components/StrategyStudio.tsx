@@ -283,7 +283,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
     const [selectedRegime, setSelectedRegime] = useState<string>('sideways');
     const [optimizer, setOptimizer] = useState<string>('random'); // Changed to 'random' for faster, more predictable training
-    const [lookbackDays, setLookbackDays] = useState<number>(30);
+    const [lookbackCandles, setLookbackCandles] = useState<number>(10000); // Changed from lookbackDays to lookbackCandles
     const [nIterations, setNIterations] = useState<number>(20);
     
     // Training state
@@ -472,7 +472,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     timeframe: selectedTimeframe,
                     regime: selectedRegime,
                     optimizer: optimizer,
-                    lookback_days: lookbackDays,
+                    lookback_candles: lookbackCandles,  // Changed from lookback_days
                     n_iterations: nIterations
                 }),
                 signal: controller.signal
@@ -661,17 +661,37 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
-                                Lookback Days
+                                Training Candles
                             </label>
                             <input
                                 type="number"
-                                value={lookbackDays}
-                                onChange={(e) => setLookbackDays(Number(e.target.value))}
-                                min="7"
-                                max="365"
+                                value={lookbackCandles}
+                                onChange={(e) => setLookbackCandles(Number(e.target.value))}
+                                min="1000"
+                                max="50000"
+                                step="1000"
                                 className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
                             />
-                            <p className="text-xs text-brand-text-secondary mt-1">Historical data window</p>
+                            <div className="flex gap-2 mt-2 flex-wrap">
+                                {[5000, 10000, 15000, 20000].map(count => (
+                                    <button
+                                        key={count}
+                                        onClick={() => setLookbackCandles(count)}
+                                        className={`text-xs px-2 py-1 rounded ${
+                                            lookbackCandles === count 
+                                                ? 'bg-brand-primary text-white' 
+                                                : 'bg-brand-bg-secondary text-brand-text-secondary hover:bg-brand-bg-tertiary'
+                                        }`}
+                                    >
+                                        {(count / 1000).toFixed(0)}k
+                                    </button>
+                                ))}
+                            </div>
+                            <p className="text-xs text-brand-text-secondary mt-1">
+                                {lookbackCandles >= 10000 
+                                    ? '~35 days @ 5m, 417 days @ 1h (recommended)' 
+                                    : '~17 days @ 5m, 208 days @ 1h (quick test)'}
+                            </p>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">

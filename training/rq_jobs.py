@@ -42,7 +42,7 @@ async def _run_training_job_async(
     timeframe: str,
     regime: str,
     optimizer: str,
-    lookback_days: int,
+    lookback_candles: int,  # Changed from lookback_days to lookback_candles
     n_iterations: int,
     run_validation: bool
 ) -> Dict[str, Any]:
@@ -74,7 +74,7 @@ async def _run_training_job_async(
             'symbol': symbol,
             'exchange': exchange,
             'timeframe': timeframe,
-            'lookback_days': lookback_days
+            'lookback_candles': lookback_candles
         })
         
         collector = DataCollector(db_url=db_url)
@@ -82,7 +82,7 @@ async def _run_training_job_async(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
-            lookback_days=lookback_days
+            lookback_candles=lookback_candles  # Now using candles directly
         )
         
         if data is None or len(data) < 100:
@@ -417,7 +417,7 @@ def run_training_job(
     timeframe: str,
     regime: str,
     optimizer: str,
-    lookback_days: int,
+    lookback_candles: int,  # Changed from lookback_days
     n_iterations: int,
     run_validation: bool
 ) -> Dict[str, Any]:
@@ -427,5 +427,5 @@ def run_training_job(
     """
     return asyncio.run(_run_training_job_async(
         job_id, strategy, symbol, exchange, timeframe, regime,
-        optimizer, lookback_days, n_iterations, run_validation
+        optimizer, lookback_candles, n_iterations, run_validation
     ))

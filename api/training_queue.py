@@ -138,7 +138,8 @@ class TrainingJobCreate(BaseModel):
     regime: str
     config_id: Optional[str] = None  # FK to training_configurations if creating from existing
     # Training parameters
-    lookback_days: int = 90
+    lookback_candles: int = 10000  # Candle count for training data (consistent across timeframes)
+    lookback_days: Optional[int] = None  # Deprecated: kept for backward compatibility
     optimizer: str = "bayesian"
     n_iterations: int = 200
 
@@ -184,6 +185,17 @@ async def submit_training_job(request: TrainingJobCreate):
     try:
         conn = await asyncpg.connect(get_db_url())
         
+        # Backward compatibility: support both candles and days
+        lookback_candles = request.lookback_candles
+        lookback_days = request.lookback_days
+        
+        if lookback_candles is None and lookback_days is not None:
+            # Legacy request: convert days to candles (assume 5m timeframe for estimate)
+            lookback_candles = lookback_days * 288  # 288 candles per day at 5m
+        elif lookback_candles is None:
+            # No lookback specified, use default
+            lookback_candles = 10000
+        
         # Create job record in database
         # Note: id is auto-generated INTEGER (serial), not UUID
         
@@ -194,9 +206,9 @@ async def submit_training_job(request: TrainingJobCreate):
             """
             INSERT INTO training_jobs (
                 config_id, status, strategy, symbol, exchange, timeframe, regime,
-                strategy_name, pair, optimizer, lookback_days, n_iterations, submitted_at, job_id
+                strategy_name, pair, optimizer, lookback_candles, lookback_days, n_iterations, submitted_at, job_id
             )
-            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, NOW(), $12)
+            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, $12, NOW(), $13)
             RETURNING *
             """,
             config_id_uuid,
@@ -208,9 +220,10 @@ async def submit_training_job(request: TrainingJobCreate):
             request.strategy_name,  # $7 - strategy_name (varchar)
             request.pair,           # $8 - pair (varchar)
             request.optimizer,      # $9 - optimizer
-            request.lookback_days,  # $10 - lookback_days
-            request.n_iterations,   # $11 - n_iterations
-            str(uuid.uuid4())       # $12 - job_id
+            lookback_candles,       # $10 - lookback_candles
+            lookback_days,          # $11 - lookback_days (kept for backward compatibility)
+            request.n_iterations,   # $12 - n_iterations
+            str(uuid.uuid4())       # $13 - job_id
         )
         
         # Enqueue to RQ worker
@@ -224,7 +237,7 @@ async def submit_training_job(request: TrainingJobCreate):
             request.timeframe,
             request.regime,
             request.optimizer,
-            request.lookback_days,
+            lookback_candles,  # Now passing candles instead of days
             request.n_iterations,
             True,  # run_validation
             job_timeout=43200  # 12 hours - allows for large datasets (60+ days, 17k+ candles)
