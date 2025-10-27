@@ -123,22 +123,47 @@ sudo systemctl start redis-server
 redis-cli ping || (echo "Redis not responding" && exit 1)
 EOF
 
-echo "[deploy] installing RQ training worker service"
+echo "[deploy] installing RQ training worker services"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
 DEST="${DEST:-/srv/trad}"
 
-# Stop existing worker if running
+# Stop and disable old single worker service if running
 sudo systemctl stop trad-worker.service || true
 sudo systemctl disable trad-worker.service || true
 
-# Install worker service
-sudo touch /var/log/trad-worker.log || true
-sudo cp "${DEST}/ops/systemd/trad-worker.service" /etc/systemd/system/
+# Stop any existing multi-instance workers
+sudo systemctl stop 'trad-worker@*.service' || true
+sudo systemctl disable 'trad-worker@*.service' || true
 
-# Reload systemd and enable worker (will be started in final restart section)
+# Install multi-instance worker template
+sudo cp "${DEST}/ops/systemd/trad-worker@.service" /etc/systemd/system/
+
+# Create log files for each worker instance
+sudo touch /var/log/trad-worker-1.log || true
+sudo touch /var/log/trad-worker-2.log || true
+sudo touch /var/log/trad-worker-3.log || true
+
+# Detect CPU cores and enable appropriate number of workers
+CPU_CORES=$(nproc)
+if [ "$CPU_CORES" -ge 4 ]; then
+    WORKERS=3
+elif [ "$CPU_CORES" -ge 2 ]; then
+    WORKERS=1
+else
+    WORKERS=1
+fi
+
+echo "Detected $CPU_CORES CPU cores, enabling $WORKERS training worker(s)"
+
+# Reload systemd
 sudo systemctl daemon-reload
-sudo systemctl enable trad-worker.service
+
+# Enable worker instances (will be started in final restart section)
+for i in $(seq 1 $WORKERS); do
+    echo "  Enabling trad-worker@${i}.service"
+    sudo systemctl enable trad-worker@${i}.service
+done
 EOF
 
 echo "[deploy] checking postgres authentication config"
