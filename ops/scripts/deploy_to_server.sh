@@ -123,47 +123,26 @@ sudo systemctl start redis-server
 redis-cli ping || (echo "Redis not responding" && exit 1)
 EOF
 
-echo "[deploy] installing RQ training worker services"
+echo "[deploy] installing RQ training worker service"
 ssh "${SSH_USER}@${SERVER}" bash -s <<'EOF'
 set -euo pipefail
 DEST="${DEST:-/srv/trad}"
 
-# Stop and disable old single worker service if running
-sudo systemctl stop trad-worker.service || true
-sudo systemctl disable trad-worker.service || true
+# Stop any existing multi-instance workers if they exist
+sudo systemctl stop 'trad-worker@1.service' || true
+sudo systemctl stop 'trad-worker@2.service' || true
+sudo systemctl stop 'trad-worker@3.service' || true
+sudo systemctl disable 'trad-worker@1.service' || true
+sudo systemctl disable 'trad-worker@2.service' || true
+sudo systemctl disable 'trad-worker@3.service' || true
 
-# Stop any existing multi-instance workers
-sudo systemctl stop 'trad-worker@*.service' || true
-sudo systemctl disable 'trad-worker@*.service' || true
+# Install single worker service
+sudo touch /var/log/trad-worker.log || true
+sudo cp "${DEST}/ops/systemd/trad-worker.service" /etc/systemd/system/
 
-# Install multi-instance worker template
-sudo cp "${DEST}/ops/systemd/trad-worker@.service" /etc/systemd/system/
-
-# Create log files for each worker instance
-sudo touch /var/log/trad-worker-1.log || true
-sudo touch /var/log/trad-worker-2.log || true
-sudo touch /var/log/trad-worker-3.log || true
-
-# Detect CPU cores and enable appropriate number of workers
-CPU_CORES=$(nproc)
-if [ "$CPU_CORES" -ge 4 ]; then
-    WORKERS=3
-elif [ "$CPU_CORES" -ge 2 ]; then
-    WORKERS=1
-else
-    WORKERS=1
-fi
-
-echo "Detected $CPU_CORES CPU cores, enabling $WORKERS training worker(s)"
-
-# Reload systemd
+# Reload systemd and enable worker (will be started in final restart section)
 sudo systemctl daemon-reload
-
-# Enable worker instances (will be started in final restart section)
-for i in $(seq 1 $WORKERS); do
-    echo "  Enabling trad-worker@${i}.service"
-    sudo systemctl enable trad-worker@${i}.service
-done
+sudo systemctl enable trad-worker.service
 EOF
 
 echo "[deploy] checking postgres authentication config"
