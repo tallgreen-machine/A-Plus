@@ -71,23 +71,25 @@ class MassiveHistoricalBackfill:
         self.priority_timeframes = ['1h', '4h', '1d', '15m', '5m', '1m']
         
         # Rate limits per exchange (seconds between requests)
+        # Optimized based on exchange_limits_tester.py results
         self.rate_limits = {
-            'binanceus': 0.05,     # 50ms (most lenient)
-            'coinbase': 0.167,     # 167ms (3 req/sec)
-            'kraken': 1.0,         # 1000ms (most strict)
-            'bitstamp': 0.1,       # 100ms
-            'gemini': 0.2,         # 200ms
-            'cryptocom': 0.05      # 50ms
+            'binanceus': 0.073,    # 73ms (13.71 req/sec measured)
+            'coinbase': 0.102,     # 102ms (9.82 req/sec measured)
+            'bitstamp': 0.185,     # 185ms (5.41 req/sec measured)
+            'gemini': 0.471,       # 471ms (2.12 req/sec measured)
+            'cryptocom': 0.183     # 183ms (5.46 req/sec measured)
+            # Kraken removed - too unreliable (0.67 req/sec, frequent errors)
         }
         
         # Exchange priority order (most reliable first)
+        # Optimized based on exchange_limits_tester.py results
         self.exchange_priority = [
-            'binanceus',   # Best data availability
-            'coinbase',    # Second best
-            'kraken',      # Good historical depth
-            'bitstamp',    # European but reliable
-            'gemini',      # US regulated
-            'cryptocom'    # Growing exchange
+            'binanceus',   # Best: 13.71 req/sec, 1000 candles/req, deep history
+            'cryptocom',   # Good: 5.46 req/sec, 300 candles/req, deep history
+            'coinbase',    # Good speed but limited: 9.82 req/sec, 229 candles/req, NO 4h
+            'bitstamp',    # Decent: 5.41 req/sec, 1000 candles/req, NO SOL
+            'gemini'       # Slow: 2.12 req/sec, 1440 candles/req, NO SOL, NO 4h
+            # Kraken removed - too unreliable (0.67 req/sec, 8/10 success rate)
         ]
         
         # Progress tracking
@@ -103,10 +105,10 @@ class MassiveHistoricalBackfill:
         exchange_configs = {
             'binanceus': ccxt.binanceus({'enableRateLimit': True, 'timeout': 30000}),
             'coinbase': ccxt.coinbase({'enableRateLimit': True, 'timeout': 30000}),
-            'kraken': ccxt.kraken({'enableRateLimit': True, 'timeout': 30000}),
             'bitstamp': ccxt.bitstamp({'enableRateLimit': True, 'timeout': 30000}),
             'gemini': ccxt.gemini({'enableRateLimit': True, 'timeout': 30000}),
             'cryptocom': ccxt.cryptocom({'enableRateLimit': True, 'timeout': 30000})
+            # Kraken removed - too unreliable (rate limit errors, 8/10 success rate)
         }
         
         for name, exchange in exchange_configs.items():
@@ -123,11 +125,12 @@ class MassiveHistoricalBackfill:
         """Get database connection"""
         return get_db_conn()
     
-    def calculate_time_chunks(self, timeframe: str, months_back: int) -> List[Tuple[datetime, datetime]]:
+    def calculate_time_chunks(self, timeframe: str, months_back: int, exchange: str = 'binanceus') -> List[Tuple[datetime, datetime]]:
         """
         Calculate optimal time chunks to avoid rate limits and maximize data collection.
         
-        Strategy: Fetch maximum candles per request, then chunk by that size.
+        Strategy: Fetch maximum candles per request based on exchange capabilities.
+        Optimized using exchange_limits_tester.py results.
         """
         # Timeframe in minutes
         tf_minutes = {
@@ -137,9 +140,17 @@ class MassiveHistoricalBackfill:
         
         minutes_per_candle = tf_minutes.get(timeframe, 60)
         
-        # Most exchanges limit to 500-1000 candles per request
-        # Use conservative 500 to be safe
-        candles_per_chunk = 500
+        # Optimized candles per request based on exchange limits testing
+        # BinanceUS can handle 1000 candles/request (2x faster than old 500!)
+        exchange_limits = {
+            'binanceus': 1000,   # Tested: can handle 1000
+            'cryptocom': 300,    # Tested: max 300
+            'coinbase': 229,     # Tested: max 229
+            'bitstamp': 1000,    # Tested: can handle 1000
+            'gemini': 1440       # Tested: max 1440
+        }
+        
+        candles_per_chunk = exchange_limits.get(exchange, 500)  # Default to conservative 500
         chunk_duration_minutes = candles_per_chunk * minutes_per_candle
         chunk_duration = timedelta(minutes=chunk_duration_minutes)
         
@@ -232,8 +243,18 @@ class MassiveHistoricalBackfill:
         
         self.logger.info(f"📊 Collecting {symbol} {timeframe} from {exchange_name} ({months_back} months)")
         
-        # Calculate time chunks
-        chunks = self.calculate_time_chunks(timeframe, months_back)
+        # Calculate time chunks with exchange-specific limits
+        chunks = self.calculate_time_chunks(timeframe, months_back, exchange_name)
+        
+        # Get exchange-specific candle limit
+        exchange_limits = {
+            'binanceus': 1000,
+            'cryptocom': 300,
+            'coinbase': 229,
+            'bitstamp': 1000,
+            'gemini': 1440
+        }
+        limit = exchange_limits.get(exchange_name, 500)
         
         total_collected = 0
         total_errors = 0
@@ -242,9 +263,8 @@ class MassiveHistoricalBackfill:
             try:
                 # Convert to milliseconds
                 since = int(start_time.timestamp() * 1000)
-                limit = 500
                 
-                # Fetch OHLCV data
+                # Fetch OHLCV data with optimized limit
                 ohlcv_data = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
                 self.total_api_calls += 1
                 

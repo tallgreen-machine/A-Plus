@@ -6,19 +6,20 @@ RQ worker process that executes training jobs from the Redis queue.
 Runs independently from the FastAPI server for process isolation.
 
 Usage:
-    python worker.py
+    python worker.py [--worker-name NAME]
 
 Environment:
     REDIS_URL: Redis connection URL (default: redis://localhost:6379/0)
     
 Systemd:
-    Managed by trad-worker.service
-    Logs: /var/log/trad-worker.log
+    Managed by trad-worker@.service (multi-instance)
+    Logs: /var/log/trad-worker-{N}.log
 """
 
 import os
 import sys
 import logging
+import argparse
 from pathlib import Path
 from redis import Redis
 from rq import Worker, Queue
@@ -48,8 +49,16 @@ def get_redis_url() -> str:
 
 def main():
     """Run RQ worker."""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='TradePulse Training Worker')
+    parser.add_argument('--worker-name', type=str, default='training-worker',
+                        help='Unique name for this worker instance')
+    args = parser.parse_args()
+    
+    worker_name = args.worker_name
+    
     log.info("=" * 60)
-    log.info("TradePulse Training Worker Starting")
+    log.info(f"TradePulse Training Worker Starting: {worker_name}")
     log.info("=" * 60)
     
     # Get Redis connection
@@ -68,7 +77,7 @@ def main():
     worker = Worker(
         ['training'],  # Queue names to listen to
         connection=redis_conn,
-        name='training-worker',
+        name=worker_name,
         log_job_description=True
     )
     

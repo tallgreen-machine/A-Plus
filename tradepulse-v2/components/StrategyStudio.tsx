@@ -268,7 +268,7 @@ const AVAILABLE_SYMBOLS = [
     'MATIC/USDT'
 ];
 
-const AVAILABLE_EXCHANGES = ['binanceus'];
+const AVAILABLE_EXCHANGES = ['binanceus', 'cryptocom', 'coinbase', 'bitstamp'];
 const AVAILABLE_TIMEFRAMES = ['1m', '5m', '15m', '1h', '4h', '1d'];
 const AVAILABLE_REGIMES = ['bull', 'bear', 'sideways'];
 
@@ -281,7 +281,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     
     // Training config
     const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
-    const [selectedExchange] = useState<string>('binanceus');
+    const [selectedExchange, setSelectedExchange] = useState<string>('binanceus');
     const [selectedTimeframe, setSelectedTimeframe] = useState<string>('5m');
     const [selectedRegime, setSelectedRegime] = useState<string>('sideways');
     const [optimizer, setOptimizer] = useState<string>('random'); // Changed to 'random' for faster, more predictable training
@@ -597,14 +597,19 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                         </label>
                         <select
                             value={selectedExchange}
-                            disabled
-                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm opacity-60 cursor-not-allowed"
+                            onChange={(e) => setSelectedExchange(e.target.value)}
+                            className="w-full bg-brand-bg border border-brand-border rounded-md py-2 px-3 text-sm focus:ring-1 focus:ring-brand-primary focus:border-brand-primary"
                         >
                             {AVAILABLE_EXCHANGES.map(exchange => (
-                                <option key={exchange} value={exchange}>{exchange}</option>
+                                <option key={exchange} value={exchange}>
+                                    {exchange === 'cryptocom' ? 'Crypto.com' : 
+                                     exchange === 'binanceus' ? 'BinanceUS' : 
+                                     exchange === 'coinbase' ? 'Coinbase' : 
+                                     exchange === 'bitstamp' ? 'Bitstamp' : exchange}
+                                </option>
                             ))}
                         </select>
-                        <p className="text-xs text-brand-text-secondary mt-1">Currently only binanceus is supported</p>
+                        <p className="text-xs text-brand-text-secondary mt-1">Multi-exchange training enabled</p>
                     </div>
 
                     <div>

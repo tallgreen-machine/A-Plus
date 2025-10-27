@@ -1,0 +1,26 @@
+[Unit]
+Description=TradePulse Training Worker (RQ) - Instance %i
+After=network.target redis.service
+
+[Service]
+Type=simple
+ExecStart=/srv/trad/.venv/bin/python /srv/trad/training/worker.py --worker-name training-worker-%i
+WorkingDirectory=/srv/trad
+Restart=always
+RestartSec=5s
+User=root
+Group=root
+EnvironmentFile=/etc/trad/trad.env
+
+# Process cleanup
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=60s
+SendSIGKILL=yes
+
+# Logging
+StandardOutput=append:/var/log/trad-worker-%i.log
+StandardError=append:/var/log/trad-worker-%i.log
+
+[Install]
+WantedBy=multi-user.target
