@@ -107,18 +107,27 @@ class LiquiditySweepStrategy:
                 - 'SELL': Short entry  
                 - 'HOLD': No action
         """
+        import time
+        signal_gen_start = time.time()
+        
         log.info(f"Generating signals: {len(data)} candles")
         
         df = data.copy()
         
         # Step 1: Identify key levels
+        level_start = time.time()
         key_levels = self._identify_key_levels(df)
-        log.debug(f"Found {len(key_levels)} key levels")
+        level_time = time.time() - level_start
+        log.debug(f"Found {len(key_levels)} key levels in {level_time:.2f}s")
         
         # Step 2: Calculate volume average
+        volume_start = time.time()
         df['volume_ma'] = df['volume'].rolling(window=20).mean()
+        volume_time = time.time() - volume_start
+        log.debug(f"Volume MA calculation took {volume_time:.3f}s")
         
         # Step 3: Detect liquidity sweeps
+        sweep_start = time.time()
         signals = []
         
         # Pre-calculate price ranges for faster level filtering
@@ -176,13 +185,21 @@ class LiquiditySweepStrategy:
             
             signals.append(signal_data)
         
+        sweep_time = time.time() - sweep_start
+        
         # Convert to DataFrame
         signals_df = pd.DataFrame(signals)
+        
+        total_time = time.time() - signal_gen_start
         
         log.info(
             f"✅ Signals generated: "
             f"{len(signals_df[signals_df['signal'] == 'BUY'])} BUY, "
-            f"{len(signals_df[signals_df['signal'] == 'SELL'])} SELL"
+            f"{len(signals_df[signals_df['signal'] == 'SELL'])} SELL, "
+            f"Total: {total_time:.2f}s "
+            f"(levels: {level_time/total_time*100:.1f}%, "
+            f"volume: {volume_time/total_time*100:.1f}%, "
+            f"sweep_detection: {sweep_time/total_time*100:.1f}%)"
         )
         
         return signals_df

@@ -116,6 +116,9 @@ class BacktestEngine:
         Returns:
             BacktestResult with trades, metrics, equity curve
         """
+        import time
+        backtest_start = time.time()
+        
         log.info(f"Running backtest: {len(data)} candles")
         
         # Validate data
@@ -125,25 +128,44 @@ class BacktestEngine:
             raise ValueError(f"Missing required columns: {missing}")
         
         # Generate signals from strategy
+        signal_start = time.time()
         signals = strategy_instance.generate_signals(data)
+        signal_time = time.time() - signal_start
+        log.info(f"⏱️  Signal generation took {signal_time:.2f}s ({len(data)} candles)")
         
         # Simulate trades
+        trade_start = time.time()
         trades = self._simulate_trades(
             data=data,
             signals=signals,
             strategy_params=strategy_instance.params,
             position_size_pct=position_size_pct
         )
+        trade_time = time.time() - trade_start
+        log.info(f"⏱️  Trade simulation took {trade_time:.2f}s")
         
         # Calculate metrics
+        metrics_start = time.time()
         metrics = self._calculate_metrics(trades, data)
+        metrics_time = time.time() - metrics_start
+        log.info(f"⏱️  Metrics calculation took {metrics_time:.2f}s")
         
         # Generate equity curve
+        equity_start = time.time()
         equity_curve = self._generate_equity_curve(trades, data)
+        equity_time = time.time() - equity_start
+        log.info(f"⏱️  Equity curve generation took {equity_time:.2f}s")
+        
+        total_time = time.time() - backtest_start
         
         log.info(
             f"✅ Backtest complete: {len(trades)} trades, "
-            f"Sharpe {metrics.get('sharpe_ratio', 0):.2f}"
+            f"Sharpe {metrics.get('sharpe_ratio', 0):.2f}, "
+            f"Total time: {total_time:.2f}s "
+            f"(signals: {signal_time/total_time*100:.1f}%, "
+            f"trades: {trade_time/total_time*100:.1f}%, "
+            f"metrics: {metrics_time/total_time*100:.1f}%, "
+            f"equity: {equity_time/total_time*100:.1f}%)"
         )
         
         return BacktestResult(
