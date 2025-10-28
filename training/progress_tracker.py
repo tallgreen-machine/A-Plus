@@ -21,19 +21,14 @@ class ProgressTracker:
     Tracks and publishes training job progress in real-time.
     
     Workflow Steps:
-    1. Data Collection (0-25%)
-    2. Optimization (25-75%)
-    3. Validation (75-95%)
-    4. Configuration Save (95-100%)
+    1. Optimization/Training (0-100%)
     
-    Reports progress to training_jobs table every 0.1% for smooth UI updates.
+    Data preparation is fast and not shown in progress.
+    Reports progress to training_jobs table as iterations complete.
     """
     
     STEPS = {
-        'data_preparation': {'number': 1, 'name': 'Loading Data', 'weight': 0.25},
-        'optimization': {'number': 2, 'name': 'Training', 'weight': 0.50},
-        'validation': {'number': 3, 'name': 'Evaluating', 'weight': 0.20},
-        'save_config': {'number': 4, 'name': 'Saving', 'weight': 0.05},
+        'optimization': {'number': 1, 'name': 'Training', 'weight': 1.0},
     }
     
     def __init__(self, job_id: str, db_url: str):

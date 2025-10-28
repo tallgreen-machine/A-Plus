@@ -17,11 +17,12 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Optional, Callable
 import logging
 from tqdm import tqdm
+from joblib import delayed
 
 from ..backtest_engine import BacktestEngine, BacktestResult
+from .progress_parallel import ProgressParallel
 
 log = logging.getLogger(__name__)
-
 
 class GridSearchOptimizer:
     """
@@ -63,7 +64,8 @@ class GridSearchOptimizer:
         parameter_space: Dict[str, Any],
         objective: str = 'sharpe_ratio',
         min_trades: int = 10,
-        progress_callback: Optional[Callable[[int, int, float], None]] = None
+        progress_callback: Optional[Callable[[int, int, float], None]] = None,
+        n_jobs: int = 1
     ) -> Dict[str, Any]:
         """
         Run grid search optimization.
@@ -108,48 +110,71 @@ class GridSearchOptimizer:
                 f"Consider using RandomSearch or Bayesian optimization."
             )
         
-        # Test all combinations
-        results = []
+        # Determine parallelization
+        use_parallel = n_jobs != 1
         
-        iterator = tqdm(param_grid, desc="Grid Search") if self.verbose else param_grid
+        log.info(
+            f"Testing configurations {'in parallel' if use_parallel else 'sequentially'} "
+            f"({n_jobs if n_jobs > 0 else 'all'} workers)"
+        )
         
-        for i, params in enumerate(iterator):
+        # Define evaluation function
+        def evaluate_params(params_tuple):
+            i, params = params_tuple
             try:
-                # Create strategy instance
                 strategy = strategy_class(params)
-                
-                # Create candle-level progress callback
-                def candle_progress(current_candle, total_candles):
-                    """Called every 50 candles during backtest."""
-                    if progress_callback:
-                        # Report iteration progress + sub-iteration progress from candles
-                        progress_callback(i + 1, total_combinations, 0, current_candle, total_candles)
-                
-                # Run backtest
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy,
-                    progress_callback=candle_progress
+                    strategy_instance=strategy
                 )
                 
-                # Get objective value
                 objective_value = backtest_result.metrics.get(objective, 0)
                 
-                # Report final progress (iteration complete)
-                if progress_callback:
-                    progress_callback(i + 1, total_combinations, objective_value, 0, 0)
-                
-                # Record results
                 if backtest_result.metrics['total_trades'] >= min_trades:
-                    results.append({
+                    # Fire progress callback immediately (for parallel execution)
+                    if progress_callback:
+                        progress_callback(i + 1, total_combinations, objective_value)
+                    
+                    return {
                         'parameters': params.copy(),
                         'metrics': backtest_result.metrics,
                         'objective_value': objective_value
-                    })
+                    }
+                return None
                 
             except Exception as e:
                 log.debug(f"Backtest failed for params {params}: {e}")
-                continue
+                return None
+        
+        # Run evaluations (parallel or sequential)
+        if use_parallel:
+            # Parallel execution with progress tracking
+            results_raw = ProgressParallel(
+                n_jobs=n_jobs,
+                verbose=1,  # Enable verbose to trigger print_progress callbacks
+                progress_callback=progress_callback,
+                total=total_combinations
+            )(
+                delayed(evaluate_params)((i, params))
+                for i, params in enumerate(param_grid)
+            )
+            results = [r for r in results_raw if r is not None]
+        else:
+            # Sequential execution with progress bar
+            results = []
+            iterator = tqdm(enumerate(param_grid), total=total_combinations, desc="Grid Search") if self.verbose else enumerate(param_grid)
+            for i, params in iterator:
+                result = evaluate_params((i, params))
+                if result is not None:
+                    results.append(result)
+                    # Fire progress callback in sequential mode
+                    if progress_callback:
+                        progress_callback(len(results), total_combinations, result['objective_value'])
+            
+            for params_tuple in iterator:
+                result = evaluate_params(params_tuple)
+                if result is not None:
+                    results.append(result)
         
         if not results:
             raise ValueError(

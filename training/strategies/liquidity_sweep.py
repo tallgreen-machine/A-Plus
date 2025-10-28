@@ -90,15 +90,13 @@ class LiquiditySweepStrategy:
         
         log.debug(f"LiquiditySweepStrategy initialized: {self.params}")
     
-    def generate_signals(self, data: pd.DataFrame, progress_callback: callable = None) -> pd.DataFrame:
+    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Generate trading signals from OHLCV data.
         
         Args:
             data: DataFrame with columns:
                   timestamp, open, high, low, close, volume, atr
-            progress_callback: Optional callback(current, total, phase) 
-                               Called periodically during signal generation
         
         Returns:
             DataFrame with columns:
@@ -122,16 +120,11 @@ class LiquiditySweepStrategy:
         
         # Step 3: Detect liquidity sweeps
         signals = []
-        total_candles = len(df) - self.key_level_lookback
         
         # Pre-calculate price ranges for faster level filtering
         price_tolerance = df['atr'].median() * 3  # Only check levels within 3 ATR
         
         for i, idx in enumerate(range(self.key_level_lookback, len(df))):
-            # Report progress every 100 candles (more frequent for visibility)
-            if progress_callback and i > 0 and i % 100 == 0:
-                progress_callback(i, total_candles, 'signal_generation')
-            
             row = df.iloc[idx]
             prev_rows = df.iloc[max(0, idx - 10):idx]
             
@@ -403,7 +396,7 @@ class LiquiditySweepStrategy:
             'min_distance_from_level': (0.0005, 0.003), # 0.05% to 0.3%
             'atr_multiplier_sl': (1.0, 3.0),          # 1 to 3 ATR
             'risk_reward_ratio': (1.5, 4.0),          # 1.5:1 to 4:1
-            'max_holding_periods': [10, 20, 30, 50, 100],  # Discrete
+            'max_holding_periods': [30, 50, 75, 100, 150],  # Optimized for 1m/5m timeframes (30min-2.5hr)
             'key_level_lookback': [50, 100, 150, 200], # Discrete
             'min_level_touches': [2, 3, 4, 5]         # Discrete
         }

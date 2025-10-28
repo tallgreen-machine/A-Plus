@@ -108,7 +108,8 @@ class BayesianOptimizer:
         objective: str = 'sharpe_ratio',
         min_trades: int = 10,
         acq_func: str = 'gp_hedge',
-        progress_callback: Optional[Callable[[int, int, float], None]] = None
+        progress_callback: Optional[Callable[[int, int, float], None]] = None,
+        n_jobs: int = 1
     ) -> Dict[str, Any]:
         """
         Run Bayesian optimization using Gaussian Process.
@@ -186,18 +187,10 @@ class BayesianOptimizer:
                 # Create strategy instance
                 strategy = strategy_class(params)
                 
-                # Create candle-level progress callback
-                def candle_progress(current_candle, total_candles):
-                    """Called every 50 candles during backtest."""
-                    if progress_callback:
-                        # Report iteration progress + sub-iteration progress from candles
-                        progress_callback(iteration_counter[0], n_calls, 0, current_candle, total_candles)
-                
                 # Run backtest
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy,
-                    progress_callback=candle_progress
+                    strategy_instance=strategy
                 )
                 
                 # Check minimum trades
@@ -215,9 +208,9 @@ class BayesianOptimizer:
                     'objective_value': objective_value
                 })
                 
-                # Call final progress callback (iteration complete)
+                # Call progress callback (iteration complete)
                 if progress_callback:
-                    progress_callback(iteration_counter[0], n_calls, objective_value, 0, 0)
+                    progress_callback(iteration_counter[0], n_calls, objective_value)
                 
                 # Return negative (skopt minimizes)
                 return -objective_value
@@ -235,6 +228,7 @@ class BayesianOptimizer:
             n_initial_points=n_initial_points,
             acq_func=acq_func,
             random_state=self.random_state,
+            n_jobs=n_jobs,  # Parallelize initial random points and some internal operations
             verbose=False  # We handle progress ourselves
         )
         

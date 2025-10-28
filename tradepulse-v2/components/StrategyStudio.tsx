@@ -288,6 +288,12 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
     const [lookbackCandles, setLookbackCandles] = useState<number>(10000); // Changed from lookbackDays to lookbackCandles
     const [nIterations, setNIterations] = useState<number>(20);
     
+    // Data Quality Filtering config (NEW)
+    const [enableFiltering, setEnableFiltering] = useState<boolean>(true);
+    const [minVolumeThreshold, setMinVolumeThreshold] = useState<number>(0.1);
+    const [minPriceMovement, setMinPriceMovement] = useState<number>(0.01);
+    const [filterFlatCandles, setFilterFlatCandles] = useState<boolean>(true);
+    
     // Training state
     const [isTraining, setIsTraining] = useState(false);
     const [currentJob, setCurrentJob] = useState<TrainingJob | null>(null);
@@ -477,7 +483,14 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                     regime: selectedRegime,
                     optimizer: optimizer,
                     lookback_candles: lookbackCandles,  // Changed from lookback_days
-                    n_iterations: nIterations
+                    n_iterations: nIterations,
+                    data_filter_config: {  // NEW: Data quality filtering settings
+                        enable_filtering: enableFiltering,
+                        min_volume_threshold: minVolumeThreshold,
+                        min_price_movement_pct: minPriceMovement,
+                        filter_flat_candles: filterFlatCandles,
+                        preserve_high_volume_single_price: true
+                    }
                 }),
                 signal: controller.signal
             });
@@ -716,6 +729,92 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                             />
                             <p className="text-xs text-brand-text-secondary mt-1">Optimization attempts</p>
                         </div>
+                    </div>
+
+                    {/* Data Quality Filtering Section */}
+                    <div className="pt-4 border-t border-brand-border">
+                        <div className="mb-3">
+                            <label className="flex items-center gap-2 text-sm font-medium text-brand-text-secondary cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={enableFiltering}
+                                    onChange={(e) => setEnableFiltering(e.target.checked)}
+                                    className="w-4 h-4 text-brand-primary bg-brand-bg border-brand-border rounded focus:ring-brand-primary focus:ring-2"
+                                />
+                                <span>Enable Data Quality Filtering</span>
+                                <span className="ml-auto px-2 py-0.5 text-xs bg-green-500/10 text-green-400 rounded">Recommended</span>
+                            </label>
+                            <p className="text-xs text-brand-text-secondary mt-1 ml-6">
+                                Remove invalid candles (zero volume, flat prices) that degrade training quality
+                            </p>
+                        </div>
+
+                        {enableFiltering && (
+                            <div className="ml-6 space-y-3 pb-3">
+                                <div>
+                                    <label className="flex items-center justify-between text-xs font-medium text-brand-text-secondary mb-1">
+                                        <span>Min Volume Threshold</span>
+                                        <span className="font-mono text-brand-primary">{minVolumeThreshold}</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.05"
+                                        value={minVolumeThreshold}
+                                        onChange={(e) => setMinVolumeThreshold(Number(e.target.value))}
+                                        className="w-full h-2 bg-brand-bg-secondary rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <div className="flex justify-between text-xs text-brand-text-secondary mt-1">
+                                        <span>0 (off)</span>
+                                        <span>0.5</span>
+                                        <span>1.0 (strict)</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center justify-between text-xs font-medium text-brand-text-secondary mb-1">
+                                        <span>Min Price Movement %</span>
+                                        <span className="font-mono text-brand-primary">{(minPriceMovement * 100).toFixed(2)}%</span>
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="0.1"
+                                        step="0.005"
+                                        value={minPriceMovement}
+                                        onChange={(e) => setMinPriceMovement(Number(e.target.value))}
+                                        className="w-full h-2 bg-brand-bg-secondary rounded-lg appearance-none cursor-pointer"
+                                    />
+                                    <div className="flex justify-between text-xs text-brand-text-secondary mt-1">
+                                        <span>0% (off)</span>
+                                        <span>0.05%</span>
+                                        <span>0.10%</span>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="flex items-center gap-2 text-xs text-brand-text-secondary cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={filterFlatCandles}
+                                            onChange={(e) => setFilterFlatCandles(e.target.checked)}
+                                            className="w-3 h-3 text-brand-primary bg-brand-bg border-brand-border rounded focus:ring-brand-primary"
+                                        />
+                                        <span>Filter flat candles (O=H=L=C)</span>
+                                    </label>
+                                    <p className="text-xs text-brand-text-secondary mt-0.5 ml-5">
+                                        Preserves high-volume single-price trades
+                                    </p>
+                                </div>
+
+                                <div className="bg-blue-500/5 border border-blue-500/20 rounded-md p-2 mt-2">
+                                    <p className="text-xs text-blue-400">
+                                        <strong>Tip:</strong> Start with defaults (0.1 vol, 0.01% move). If win rate &lt; 30%, try stricter settings (0.5 vol, 0.05% move).
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="pt-4 border-t border-brand-border">

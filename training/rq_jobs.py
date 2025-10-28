@@ -14,6 +14,101 @@ from datetime import datetime, timezone
 log = logging.getLogger(__name__)
 
 
+class ProgressCallback:
+    """
+    Picklable progress callback that can be serialized and sent to worker processes.
+    
+    This class captures the job_id at initialization and can be safely pickled
+    by joblib for use in parallel worker processes.
+    """
+    
+    def __init__(self, job_id: str):
+        self.job_id = job_id
+        self.last_log_time = 0
+        
+    def __call__(self, iteration: int, total: int, score: float):
+        """
+        Store progress state and update database with iteration progress.
+        
+        This callback runs inside parallel worker processes, so it needs
+        its own database connection.
+        
+        Args:
+            iteration: Current iteration number
+            total: Total iterations
+            score: Current objective score
+        """
+        import time
+        import psycopg2
+        
+        try:
+            # Calculate percentage within THIS STEP (optimization is 0-100%)
+            step_pct = (iteration / total) * 100
+            
+            # Throttle logging to every 1 second
+            current_time = time.time()
+            if current_time - self.last_log_time >= 1.0:
+                log.info(f"🔔 Progress: iter {iteration}/{total} ({step_pct:.1f}%), score={score:.4f}")
+                self.last_log_time = current_time
+            
+            # Update DB less frequently (every 5% or on iteration completion)
+            needs_update = (iteration % max(1, total // 20) == 0) or iteration == total
+            
+            if needs_update:
+                try:
+                    # Build connection from environment variables
+                    db_host = os.getenv('DB_HOST', 'localhost')
+                    db_port = os.getenv('DB_PORT', '5432')
+                    db_user = os.getenv('DB_USER', 'traduser')
+                    db_pass = os.getenv('DB_PASSWORD', 'TRAD123!')
+                    db_name = os.getenv('DB_NAME', 'trad')
+                    
+                    # Connect and update with timeout
+                    conn = psycopg2.connect(
+                        host=db_host,
+                        port=db_port,
+                        user=db_user,
+                        password=db_pass,
+                        dbname=db_name,
+                        connect_timeout=5
+                    )
+                    cur = conn.cursor()
+                    
+                    # Convert numpy types to Python natives and handle infinity
+                    score_value = float(score) if score is not None else None
+                    if score_value is not None and (score_value == float('inf') or score_value == float('-inf')):
+                        score_value = None  # Database can't store infinity
+                    
+                    cur.execute("""
+                        UPDATE training_jobs
+                        SET progress = %s,
+                            current_episode = %s,
+                            total_episodes = %s,
+                            current_reward = %s,
+                            current_loss = %s,
+                            current_stage = 'Training'
+                        WHERE id = %s
+                    """, (
+                        round(step_pct, 2),
+                        iteration,
+                        total,
+                        score_value if score_value and score_value > 0 else None,
+                        abs(score_value) if score_value and score_value < 0 else None,
+                        int(self.job_id)
+                    ))
+                    
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    
+                    log.info(f"✅ DB updated: {step_pct:.1f}% (iter {iteration}/{total})")
+                except Exception as e:
+                    log.error(f"❌ DB update failed: {e}")
+                    
+        except Exception as e:
+            log.error(f"❌ Callback error: {e}")
+
+
 def get_db_url() -> str:
     """Get database URL from environment variables."""
     # Try DATABASE_URL first
@@ -44,7 +139,8 @@ async def _run_training_job_async(
     optimizer: str,
     lookback_candles: int,  # Changed from lookback_days to lookback_candles
     n_iterations: int,
-    run_validation: bool
+    run_validation: bool,
+    data_filter_config: Dict[str, Any] = None  # NEW: Data quality filtering config
 ) -> Dict[str, Any]:
     """
     Execute training job in worker process.
@@ -79,29 +175,23 @@ async def _run_training_job_async(
         # Initialize progress tracker
         progress = ProgressTracker(job_id=job_id, db_url=db_url)
         
-        # Step 1: Data Preparation (0-25%)
-        await progress.start('data_preparation', {
-            'symbol': symbol,
-            'exchange': exchange,
-            'timeframe': timeframe,
-            'lookback_candles': lookback_candles
-        })
-        
+        # Step 1: Data Preparation (fast, don't show progress)
+        log.info("🔧 Preparing data...")
         collector = DataCollector(db_url=db_url)
         data = await collector.fetch_ohlcv(
             symbol=symbol,
             exchange=exchange,
             timeframe=timeframe,
-            lookback_candles=lookback_candles  # Now using candles directly
+            lookback_candles=lookback_candles,  # Now using candles directly
+            data_filter_config=data_filter_config  # NEW: Pass filter config
         )
         
         if data is None or len(data) < 100:
             raise ValueError(f"Insufficient data: {len(data) if data is not None else 0} candles")
         
-        await progress.update(step_percentage=100.0)  # Indicators calculated
         log.info(f"✅ Data prepared: {len(data)} candles")
         
-        # Step 2: Optimization (25-75%)
+        # Step 2: Optimization (0-100% of progress bar)
         log.info("🔧 Starting optimization step...")
         await progress.start('optimization', {
             'optimizer': optimizer,
@@ -143,106 +233,9 @@ async def _run_training_job_async(
             'last_update_pct': 0.0
         }
         
-        # Define progress callback for fine-grained updates
-        def optimization_progress_callback(iteration: int, total: int, score: float, current_candle: int = 0, total_candles: int = 0):
-            """
-            Store progress state and update database with iteration + candle/signal progress.
-            
-            Args:
-                iteration: Current iteration number
-                total: Total iterations
-                score: Current objective score
-                current_candle: Current candle being processed (for signal gen or backtest)
-                total_candles: Total candles in dataset
-            """
-            try:
-                # Update progress state
-                progress_state['iteration'] = iteration
-                progress_state['total'] = total
-                progress_state['score'] = score
-                
-                # Calculate percentage within THIS STEP (optimization is 25-75%, so 50% of total)
-                step_pct = (iteration / total) * 100
-                
-                # Add sub-iteration progress from candles (applies to both signal gen and backtest)
-                if total_candles > 0 and current_candle > 0:
-                    candle_pct = (current_candle / total_candles)
-                    # This candle progress represents progress WITHIN the current iteration
-                    # So we add a fraction of the per-iteration percentage
-                    per_iteration_pct = 100.0 / total
-                    step_pct = ((iteration - 1) / total) * 100 + (candle_pct * per_iteration_pct)
-                
-                # Log with candle info if available
-                if total_candles > 0 and current_candle > 0:
-                    log.info(f"🔔 Progress: iter {iteration}/{total} ({step_pct:.2f}%), processing {current_candle}/{total_candles}, score={score:.4f}")
-                else:
-                    log.info(f"🔔 Progress: iter {iteration}/{total} ({step_pct:.2f}%), score={score:.4f}")
-                
-                # Update DB periodically (every 0.5% or on iteration completion)
-                needs_update = abs(step_pct - progress_state['last_update_pct']) >= 0.5 or iteration == total
-                
-                if needs_update:
-                    progress_state['last_update_pct'] = step_pct
-                    
-                    log.info(f"💾 Updating DB: step_pct={step_pct:.2f}%")
-                    
-                    # Use synchronous psycopg2 instead of asyncpg since we're in a thread
-                    import psycopg2
-                    import os
-                    
-                    try:
-                        # Calculate overall percentage (with 2 decimal places)
-                        previous_weight = 0.25  # data_preparation step
-                        current_contribution = 0.50 * (step_pct / 100.0)  # optimization step is 50% of total
-                        overall_pct = (previous_weight + current_contribution) * 100
-                        
-                        # Build connection from environment variables
-                        db_host = os.getenv('DB_HOST', 'localhost')
-                        db_port = os.getenv('DB_PORT', '5432')
-                        db_user = os.getenv('DB_USER', 'traduser')
-                        db_pass = os.getenv('DB_PASSWORD', 'TRAD123!')
-                        db_name = os.getenv('DB_NAME', 'trad')
-                        
-                        # Connect and update
-                        conn = psycopg2.connect(
-                            host=db_host,
-                            port=db_port,
-                            user=db_user,
-                            password=db_pass,
-                            dbname=db_name
-                        )
-                        cur = conn.cursor()
-                        
-                        cur.execute("""
-                            UPDATE training_jobs
-                            SET progress = %s,
-                                current_episode = %s,
-                                total_episodes = %s,
-                                current_reward = %s,
-                                current_loss = %s,
-                                current_stage = 'Training'
-                            WHERE id = %s
-                        """, (
-                            round(overall_pct, 2),
-                            iteration,
-                            total,
-                            score if score > 0 else None,
-                            abs(score) if score < 0 else None,
-                            int(job_id)
-                        ))
-                        
-                        conn.commit()
-                        cur.close()
-                        conn.close()
-                        
-                        log.info(f"✅ DB updated: {overall_pct:.2f}%")  # Changed to 2 decimal places
-                    except Exception as e:
-                        log.error(f"❌ Failed to update DB: {e}")
-                    
-            except Exception as e:
-                log.error(f"❌ Error in callback: {e}", exc_info=True)
-        
-        log.info("✅ Progress callback defined")
+        # Create picklable progress callback for iteration-level updates
+        optimization_progress_callback = ProgressCallback(job_id)
+        log.info(f"✅ Progress callback created for job {job_id}")
         
         # Run optimization with all required parameters
         # Run in executor to avoid blocking the event loop
@@ -253,7 +246,7 @@ async def _run_training_job_async(
         with concurrent.futures.ThreadPoolExecutor() as executor:
             log.info("✅ ThreadPoolExecutor created, submitting optimization task...")
             if optimizer == 'bayesian':
-                # BayesianOptimizer uses n_calls instead of n_iterations
+                # BayesianOptimizer with n_jobs for parallel initial points
                 result = await loop.run_in_executor(
                     executor,
                     lambda: opt.optimize(
@@ -264,12 +257,12 @@ async def _run_training_job_async(
                         n_calls=n_iterations,
                         objective='sharpe_ratio',
                         min_trades=10,
-                        progress_callback=optimization_progress_callback
+                        progress_callback=optimization_progress_callback,
+                        n_jobs=-1  # Use all CPU cores
                     )
                 )
             elif optimizer == 'random':
-                # RandomSearchOptimizer uses n_iterations
-                # Force n_jobs=1 to enable candle-level progress callbacks
+                # RandomSearchOptimizer with parallel execution enabled
                 result = await loop.run_in_executor(
                     executor,
                     lambda: opt.optimize(
@@ -281,11 +274,11 @@ async def _run_training_job_async(
                         objective='sharpe_ratio',
                         min_trades=10,
                         progress_callback=optimization_progress_callback,
-                        n_jobs=1  # Sequential execution for progress updates
+                        n_jobs=-1  # Use all CPU cores for parallel execution
                     )
                 )
             else:
-                # GridSearchOptimizer doesn't use n_iterations (tests all combinations)
+                # GridSearchOptimizer with parallel execution
                 result = await loop.run_in_executor(
                     executor,
                     lambda: opt.optimize(
@@ -295,7 +288,8 @@ async def _run_training_job_async(
                         parameter_space=parameter_space,
                         objective='sharpe_ratio',
                         min_trades=10,
-                        progress_callback=optimization_progress_callback
+                        progress_callback=optimization_progress_callback,
+                        n_jobs=-1  # Use all CPU cores
                     )
                 )
         
@@ -306,15 +300,8 @@ async def _run_training_job_async(
         await progress.update(step_percentage=100.0)
         log.info(f"Optimization complete: best_score={best_score:.4f}")
         
-        # Step 3: Validation (75-95%) - optional (skip for now)
-        await progress.start('validation', {'skipped': True})
-        await progress.update(step_percentage=100.0)
+        # Validation and save_config steps removed - optimization is now 0-100%
         validation_result = None
-        
-        # Step 4: Save Configuration (95-100%)
-        await progress.start('save_config', {
-            'config_destination': 'trained_configurations'
-        })
         
         # Run final backtest with best parameters
         engine = BacktestEngine()
@@ -333,7 +320,10 @@ async def _run_training_job_async(
             backtest_result=backtest_result,
             validation_result=validation_result,
             optimizer=optimizer,
-            metadata={'job_id': int(job_id)}  # Include job ID in metadata
+            metadata={
+                'job_id': int(job_id),
+                'data_filter_config': data_filter_config  # NEW: Include filter settings in metadata
+            }
         )
         
         await progress.complete()
@@ -375,7 +365,8 @@ def run_training_job(
     optimizer: str,
     lookback_candles: int,  # Changed from lookback_days
     n_iterations: int,
-    run_validation: bool
+    run_validation: bool,
+    data_filter_config: Dict[str, Any] = None  # NEW: Data quality filtering config
 ) -> Dict[str, Any]:
     """
     Sync wrapper for the training job (called by RQ).
@@ -383,5 +374,5 @@ def run_training_job(
     """
     return asyncio.run(_run_training_job_async(
         job_id, strategy, symbol, exchange, timeframe, regime,
-        optimizer, lookback_candles, n_iterations, run_validation
+        optimizer, lookback_candles, n_iterations, run_validation, data_filter_config
     ))

@@ -102,8 +102,7 @@ class BacktestEngine:
         self,
         data: pd.DataFrame,
         strategy_instance: Any,
-        position_size_pct: float = 1.0,
-        progress_callback: Optional[callable] = None
+        position_size_pct: float = 1.0
     ) -> BacktestResult:
         """
         Run backtest simulation.
@@ -113,8 +112,6 @@ class BacktestEngine:
                   Required columns: timestamp, open, high, low, close, volume, atr
             strategy_instance: Strategy object with generate_signals() method
             position_size_pct: Position sizing multiplier (1.0 = full risk_per_trade)
-            progress_callback: Optional callback function(current_candle, total_candles)
-                               Called every 50 candles during simulation
         
         Returns:
             BacktestResult with trades, metrics, equity curve
@@ -127,21 +124,15 @@ class BacktestEngine:
         if missing:
             raise ValueError(f"Missing required columns: {missing}")
         
-        # Generate signals from strategy (pass progress callback)
-        def signal_progress(current, total, phase):
-            """Wrapper to convert signal generation progress to candle-style callback."""
-            if progress_callback:
-                progress_callback(current, total)
-        
-        signals = strategy_instance.generate_signals(data, progress_callback=signal_progress)
+        # Generate signals from strategy
+        signals = strategy_instance.generate_signals(data)
         
         # Simulate trades
         trades = self._simulate_trades(
             data=data,
             signals=signals,
             strategy_params=strategy_instance.params,
-            position_size_pct=position_size_pct,
-            progress_callback=progress_callback
+            position_size_pct=position_size_pct
         )
         
         # Calculate metrics
@@ -167,8 +158,7 @@ class BacktestEngine:
         data: pd.DataFrame,
         signals: pd.DataFrame,
         strategy_params: Dict[str, Any],
-        position_size_pct: float,
-        progress_callback: Optional[callable] = None
+        position_size_pct: float
     ) -> List[Trade]:
         """
         Simulate trade execution based on signals.
@@ -178,7 +168,6 @@ class BacktestEngine:
             signals: DataFrame with columns: timestamp, signal, stop_loss, take_profit
             strategy_params: Strategy parameters (for max_holding_periods)
             position_size_pct: Position size multiplier
-            progress_callback: Optional callback(current_candle, total_candles) every 50 candles
         
         Returns:
             List of executed trades
@@ -192,17 +181,9 @@ class BacktestEngine:
         df['signal'].fillna('HOLD', inplace=True)
         
         max_holding = strategy_params.get('max_holding_periods', 50)
-        total_candles = len(df)
         
         for idx, row in df.iterrows():
             timestamp = int(row['timestamp'])
-            
-            # Progress callback every 50 candles
-            if progress_callback is not None and idx % 50 == 0:
-                try:
-                    progress_callback(idx, total_candles)
-                except Exception as e:
-                    log.warning(f"Progress callback error: {e}")
             
             # Check if we have an open position
             if current_position is not None:
@@ -212,23 +193,40 @@ class BacktestEngine:
                 exit_price = None
                 exit_reason = None
                 
-                # 1. Stop-loss hit
-                if row['low'] <= current_position['stop_loss']:
-                    exit_price = current_position['stop_loss']
-                    exit_reason = 'SL'
+                # Different exit logic for LONG vs SHORT positions
+                if current_position['side'] == 'LONG':
+                    # LONG: Stop-loss below entry, Take-profit above entry
+                    
+                    # 1. Stop-loss hit (price drops to or below SL)
+                    if row['low'] <= current_position['stop_loss']:
+                        exit_price = current_position['stop_loss']
+                        exit_reason = 'SL'
+                    
+                    # 2. Take-profit hit (price rises to or above TP)
+                    elif row['high'] >= current_position['take_profit']:
+                        exit_price = current_position['take_profit']
+                        exit_reason = 'TP'
                 
-                # 2. Take-profit hit
-                elif row['high'] >= current_position['take_profit']:
-                    exit_price = current_position['take_profit']
-                    exit_reason = 'TP'
+                else:  # SHORT position
+                    # SHORT: Stop-loss above entry, Take-profit below entry
+                    
+                    # 1. Stop-loss hit (price rises to or above SL)
+                    if row['high'] >= current_position['stop_loss']:
+                        exit_price = current_position['stop_loss']
+                        exit_reason = 'SL'
+                    
+                    # 2. Take-profit hit (price drops to or below TP)
+                    elif row['low'] <= current_position['take_profit']:
+                        exit_price = current_position['take_profit']
+                        exit_reason = 'TP'
                 
-                # 3. Maximum holding period
-                elif holding_periods >= max_holding:
+                # 3. Maximum holding period (applies to both LONG and SHORT)
+                if exit_price is None and holding_periods >= max_holding:
                     exit_price = row['close']
                     exit_reason = 'MAX_HOLD'
                 
-                # 4. Opposite signal
-                elif row['signal'] in ['BUY', 'SELL']:
+                # 4. Opposite signal (applies to both LONG and SHORT)
+                if exit_price is None and row['signal'] in ['BUY', 'SELL']:
                     if (row['signal'] == 'SELL' and current_position['side'] == 'LONG') or \
                        (row['signal'] == 'BUY' and current_position['side'] == 'SHORT'):
                         exit_price = row['close']
@@ -299,7 +297,10 @@ class BacktestEngine:
         risk_amount = self.initial_capital * self.risk_per_trade * position_size_pct
         
         # Position size = risk_amount / stop_loss_distance
-        sl_distance = abs(entry_price_adj - stop_loss) / entry_price_adj
+        # CRITICAL: Use entry_price (not entry_price_adj) because stop_loss and take_profit
+        # are calculated from the signal's entry_price. Using entry_price_adj creates a mismatch
+        # where position sizing doesn't match actual SL/TP levels, causing systematic losses.
+        sl_distance = abs(entry_price - stop_loss) / entry_price
         if sl_distance == 0:
             sl_distance = 0.02  # Default 2% if not provided
         

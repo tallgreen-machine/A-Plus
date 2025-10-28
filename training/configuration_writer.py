@@ -501,11 +501,12 @@ class ConfigurationWriter:
                     runtime_env,
                     discovery_date,
                     metadata_json,
+                    data_filter_config,
                     job_id,
                     created_at,
                     updated_at
                 ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24
+                    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
                 )
                 RETURNING id
             """
@@ -516,12 +517,18 @@ class ConfigurationWriter:
             # Extract job_id from metadata if available
             job_id = config_json.get('metadata', {}).get('job_id')
             
-            # Convert percentages and handle None values safely
+            # Extract data_filter_config from metadata (NEW)
+            data_filter_config = config_json.get('metadata', {}).get('data_filter_config')
+            filter_config_json = json.dumps(data_filter_config) if data_filter_config else None
+            
+            # Get win rate (already in decimal format from backtest engine)
+            # CRITICAL: gross_win_rate comes as decimal (0.50 = 50%), not percentage (50.0)
+            # Do NOT divide by 100 or it becomes 0.0050 (0.50%)
             gross_win_rate = perf.get('gross_WR', 0)
-            if gross_win_rate is not None:
-                gross_win_rate = float(gross_win_rate) / 100.0
-            else:
+            if gross_win_rate is None:
                 gross_win_rate = 0.0
+            else:
+                gross_win_rate = float(gross_win_rate)
             
             result = await conn.fetchval(
                 query,
@@ -546,6 +553,7 @@ class ConfigurationWriter:
                 config_json['metadata'].get('runtime_env', 'training_v2'),  # runtime_env
                 datetime.fromisoformat(config_json['metadata'].get('discovery_date', datetime.now(timezone.utc).isoformat())),  # discovery_date
                 json.dumps(convert_numpy_types(config_json['metadata'])),  # metadata_json
+                filter_config_json,  # data_filter_config (NEW)
                 job_id,  # job_id from metadata
                 datetime.now(timezone.utc),  # created_at
                 datetime.now(timezone.utc)  # updated_at

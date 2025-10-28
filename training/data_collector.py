@@ -94,10 +94,11 @@ class DataCollector:
         timeframe: str,
         lookback_candles: int,  # Changed from lookback_days to lookback_candles
         lookback_days: Optional[int] = None,  # Kept for backward compatibility
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
+        data_filter_config: Optional[Dict] = None  # NEW: Data quality filtering config
     ) -> pd.DataFrame:
         """
-        Fetch OHLCV data (database-first, API fallback).
+        Fetch OHLCV data (database-first, API fallback) with optional quality filtering.
         
         Args:
             symbol: Trading pair (e.g., 'BTC/USDT')
@@ -106,6 +107,14 @@ class DataCollector:
             lookback_candles: Number of candles of historical data (preferred)
             lookback_days: Days of historical data (deprecated, for backward compatibility)
             end_date: End date (default: now)
+            data_filter_config: Data quality filtering settings (optional):
+                {
+                    'enable_filtering': True/False,
+                    'min_volume_threshold': 0.1,
+                    'min_price_movement_pct': 0.01,
+                    'filter_flat_candles': True,
+                    'preserve_high_volume_single_price': True
+                }
         
         Returns:
             DataFrame with columns:
@@ -179,6 +188,31 @@ class DataCollector:
         if len(df) > lookback_candles:
             df = df.tail(lookback_candles).reset_index(drop=True)
             log.info(f"Limited to {lookback_candles} most recent candles")
+        
+        # Step 3.5: Apply data quality filtering (if enabled)
+        if data_filter_config and data_filter_config.get('enable_filtering', False):
+            log.info("🧹 Applying data quality filtering...")
+            from training.data_cleaner import DataCleaner
+            
+            cleaner = DataCleaner(config=data_filter_config)
+            df_before = df.copy()
+            df, filter_stats = cleaner.clean(df)
+            
+            # Log filtering results
+            log.info(
+                f"✅ Filtered: {filter_stats['original_count']} → {filter_stats['filtered_count']} candles "
+                f"({filter_stats['removed_count']} removed, {filter_stats['removed_pct']:.1f}%)"
+            )
+            log.info(f"   Data quality score: {filter_stats['data_quality_score']:.1f}%")
+            
+            # Check if we have enough data remaining
+            if len(df) < 100:
+                log.warning(
+                    f"⚠️ Filtering removed too many candles! "
+                    f"Only {len(df)} remaining (need ≥100). "
+                    f"Consider relaxing filter thresholds or using longer lookback."
+                )
+                # Don't fail - use the filtered data we have
         
         # Step 4: Calculate indicators
         df = self._calculate_indicators(df)

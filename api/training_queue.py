@@ -142,6 +142,9 @@ class TrainingJobCreate(BaseModel):
     lookback_days: Optional[int] = None  # Deprecated: kept for backward compatibility
     optimizer: str = "bayesian"
     n_iterations: int = 200
+    data_filter_config: Optional[Dict[str, Any]] = None  # NEW: Data quality filtering settings
+    # Data quality filtering (NEW)
+    data_filter_config: Optional[Dict[str, Any]] = None
 
 class TrainingJobResponse(BaseModel):
     """Training job info for queue display"""
@@ -202,13 +205,18 @@ async def submit_training_job(request: TrainingJobCreate):
         # Convert config_id to UUID or None
         config_id_uuid = uuid.UUID(request.config_id) if request.config_id else None
         
+        # Serialize filter config for storage
+        import json
+        filter_config_json = json.dumps(request.data_filter_config) if request.data_filter_config else None
+        
         row = await conn.fetchrow(
             """
             INSERT INTO training_jobs (
                 config_id, status, strategy, symbol, exchange, timeframe, regime,
-                strategy_name, pair, optimizer, lookback_candles, lookback_days, n_iterations, submitted_at, job_id
+                strategy_name, pair, optimizer, lookback_candles, lookback_days, n_iterations, 
+                data_filter_config, submitted_at, job_id
             )
-            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, $12, NOW(), $13)
+            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, $12, $13::jsonb, NOW(), $14)
             RETURNING *
             """,
             config_id_uuid,
@@ -223,7 +231,8 @@ async def submit_training_job(request: TrainingJobCreate):
             lookback_candles,       # $10 - lookback_candles
             lookback_days,          # $11 - lookback_days (kept for backward compatibility)
             request.n_iterations,   # $12 - n_iterations
-            str(uuid.uuid4())       # $13 - job_id
+            filter_config_json,     # $13 - data_filter_config (JSONB)
+            str(uuid.uuid4())       # $14 - job_id
         )
         
         # Enqueue to RQ worker
@@ -240,6 +249,7 @@ async def submit_training_job(request: TrainingJobCreate):
             lookback_candles,  # Now passing candles instead of days
             request.n_iterations,
             True,  # run_validation
+            request.data_filter_config,  # NEW: Pass filter config to worker
             job_timeout=43200  # 12 hours - allows for large datasets (60+ days, 17k+ candles)
         )
         

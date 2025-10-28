@@ -21,10 +21,11 @@ import numpy as np
 from typing import Dict, Any, List, Tuple, Union, Callable, Optional
 import logging
 from tqdm import tqdm
-from joblib import Parallel, delayed
+from joblib import delayed
 
 from ..backtest_engine import BacktestEngine, BacktestResult
 from ..utils.cpu_config import get_cached_training_workers
+from .progress_parallel import ProgressParallel
 
 log = logging.getLogger(__name__)
 
@@ -146,25 +147,17 @@ class RandomSearchOptimizer:
             try:
                 strategy = strategy_class(params)
                 
-                # Create candle-level progress callback
-                def candle_progress(current_candle, total_candles):
-                    """Called every 50 candles during backtest."""
-                    if not use_parallel and progress_callback:
-                        # Report iteration progress + sub-iteration progress from candles
-                        progress_callback(i + 1, n_iterations, 0, current_candle, total_candles)
-                
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy,
-                    progress_callback=candle_progress if not use_parallel else None
+                    strategy_instance=strategy
                 )
                 
                 if backtest_result.metrics['total_trades'] >= min_trades:
                     objective_value = backtest_result.metrics.get(objective, 0)
                     
-                    # Call final progress callback (iteration complete)
-                    if not use_parallel and progress_callback:
-                        progress_callback(i + 1, n_iterations, objective_value, 0, 0)
+                    # Fire progress callback immediately (for parallel execution)
+                    if progress_callback:
+                        progress_callback(i + 1, len(all_params), objective_value)
                     
                     return {
                         'parameters': params.copy(),
@@ -180,7 +173,13 @@ class RandomSearchOptimizer:
         # Execute evaluations (parallel or sequential)
         if use_parallel:
             log.info(f"Running parallel evaluation with {n_jobs} workers...")
-            results = Parallel(n_jobs=n_jobs, backend='loky', verbose=0)(
+            results = ProgressParallel(
+                n_jobs=n_jobs, 
+                backend='loky', 
+                verbose=1,  # Enable verbose to trigger print_progress callbacks
+                progress_callback=progress_callback,
+                total=len(all_params)
+            )(
                 delayed(evaluate_config)((i, params)) 
                 for i, params in enumerate(all_params)
             )
@@ -194,6 +193,9 @@ class RandomSearchOptimizer:
                 result = evaluate_config((i, params))
                 if result is not None:
                     results.append(result)
+                    # Fire progress callback in sequential mode too
+                    if progress_callback:
+                        progress_callback(len(results), len(all_params), result['objective_value'])
         
         if not results:
             raise ValueError(
