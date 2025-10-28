@@ -102,7 +102,8 @@ class BacktestEngine:
         self,
         data: pd.DataFrame,
         strategy_instance: Any,
-        position_size_pct: float = 1.0
+        position_size_pct: float = 1.0,
+        progress_callback: Optional[callable] = None
     ) -> BacktestResult:
         """
         Run backtest simulation.
@@ -112,6 +113,8 @@ class BacktestEngine:
                   Required columns: timestamp, open, high, low, close, volume, atr
             strategy_instance: Strategy object with generate_signals() method
             position_size_pct: Position sizing multiplier (1.0 = full risk_per_trade)
+            progress_callback: Optional callback(current, total, stage)
+                             Called periodically during backtest phases
         
         Returns:
             BacktestResult with trades, metrics, equity curve
@@ -129,7 +132,7 @@ class BacktestEngine:
         
         # Generate signals from strategy
         signal_start = time.time()
-        signals = strategy_instance.generate_signals(data)
+        signals = strategy_instance.generate_signals(data, progress_callback=progress_callback)
         signal_time = time.time() - signal_start
         log.info(f"⏱️  Signal generation took {signal_time:.2f}s ({len(data)} candles)")
         

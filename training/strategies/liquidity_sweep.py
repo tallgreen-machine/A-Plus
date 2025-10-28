@@ -19,7 +19,7 @@ Exit Logic:
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Callable
 from dataclasses import dataclass
 import logging
 
@@ -90,13 +90,19 @@ class LiquiditySweepStrategy:
         
         log.debug(f"LiquiditySweepStrategy initialized: {self.params}")
     
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(
+        self, 
+        data: pd.DataFrame,
+        progress_callback: Optional[Callable] = None
+    ) -> pd.DataFrame:
         """
         Generate trading signals from OHLCV data.
         
         Args:
             data: DataFrame with columns:
                   timestamp, open, high, low, close, volume, atr
+            progress_callback: Optional callback(current, total, stage)
+                             Called periodically during signal generation
         
         Returns:
             DataFrame with columns:
@@ -132,6 +138,10 @@ class LiquiditySweepStrategy:
         
         # Pre-calculate price ranges for faster level filtering
         price_tolerance = df['atr'].median() * 3  # Only check levels within 3 ATR
+        
+        # Calculate total iterations for progress
+        total_iterations = len(df) - self.key_level_lookback
+        update_frequency = max(1, total_iterations // 100)  # Update ~100 times (every 1%)
         
         for i, idx in enumerate(range(self.key_level_lookback, len(df))):
             row = df.iloc[idx]
@@ -184,6 +194,10 @@ class LiquiditySweepStrategy:
                         break
             
             signals.append(signal_data)
+            
+            # Fire progress callback periodically
+            if progress_callback and (i % update_frequency == 0 or i == total_iterations - 1):
+                progress_callback(i + 1, total_iterations, 'signal_generation')
         
         sweep_time = time.time() - sweep_start
         

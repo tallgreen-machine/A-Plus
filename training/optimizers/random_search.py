@@ -149,7 +149,8 @@ class RandomSearchOptimizer:
                 
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy
+                    strategy_instance=strategy,
+                    progress_callback=progress_callback  # Pass through for intra-backtest progress
                 )
                 
                 if backtest_result.metrics['total_trades'] >= min_trades:

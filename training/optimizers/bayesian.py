@@ -190,7 +190,8 @@ class BayesianOptimizer:
                 # Run backtest
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy
+                    strategy_instance=strategy,
+                    progress_callback=progress_callback  # Pass through for intra-backtest progress
                 )
                 
                 # Check minimum trades

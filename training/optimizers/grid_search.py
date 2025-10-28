@@ -125,7 +125,8 @@ class GridSearchOptimizer:
                 strategy = strategy_class(params)
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
-                    strategy_instance=strategy
+                    strategy_instance=strategy,
+                    progress_callback=progress_callback  # Pass through for intra-backtest progress
                 )
                 
                 objective_value = backtest_result.metrics.get(objective, 0)
