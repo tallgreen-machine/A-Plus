@@ -123,11 +123,22 @@ class GridSearchOptimizer:
             i, params = params_tuple
             try:
                 strategy = strategy_class(params)
+                
+                # Create nested callback for cumulative progress tracking
+                def nested_callback(intra_current, intra_total, stage):
+                    if progress_callback and intra_total > 0:
+                        intra_fraction = intra_current / intra_total
+                        progress_callback(i, intra_fraction, stage)
+                
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
                     strategy_instance=strategy,
-                    progress_callback=progress_callback  # Pass through for intra-backtest progress
+                    progress_callback=nested_callback
                 )
+                
+                # Mark episode as complete
+                if progress_callback:
+                    progress_callback(i, 1.0, 'completed')
                 
                 objective_value = backtest_result.metrics.get(objective, 0)
                 

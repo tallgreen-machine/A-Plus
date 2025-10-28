@@ -187,12 +187,22 @@ class BayesianOptimizer:
                 # Create strategy instance
                 strategy = strategy_class(params)
                 
-                # Run backtest
+                # Create nested callback for cumulative progress tracking
+                def nested_callback(intra_current, intra_total, stage):
+                    if progress_callback and intra_total > 0:
+                        current_iter = iteration_counter[0] - 1  # 0-indexed
+                        intra_fraction = intra_current / intra_total
+                        progress_callback(current_iter, intra_fraction, stage)
+                
                 backtest_result = backtest_engine.run_backtest(
                     data=data,
                     strategy_instance=strategy,
-                    progress_callback=progress_callback  # Pass through for intra-backtest progress
+                    progress_callback=nested_callback
                 )
+                
+                # Mark episode as complete
+                if progress_callback:
+                    progress_callback(iteration_counter[0] - 1, 1.0, 'completed')
                 
                 # Check minimum trades
                 if backtest_result.metrics['total_trades'] < min_trades:

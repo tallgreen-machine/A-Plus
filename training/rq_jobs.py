@@ -18,43 +18,71 @@ class ProgressCallback:
     """
     Picklable progress callback that can be serialized and sent to worker processes.
     
+    Uses Redis to track cumulative progress across parallel episodes.
+    Each episode contributes proportionally to overall progress.
+    
     This class captures the job_id at initialization and can be safely pickled
     by joblib for use in parallel worker processes.
     """
     
-    def __init__(self, job_id: str):
+    def __init__(self, job_id: str, total_episodes: int):
         self.job_id = job_id
+        self.total_episodes = total_episodes
         self.last_log_time = 0
+        self.last_db_update_pct = -1  # Track last percentage to avoid excessive DB updates
         
-    def __call__(self, iteration: int, total: int, score: float):
+    def __call__(self, episode_index: int, intra_progress: float, stage: str = 'signal_generation'):
         """
-        Store progress state and update database with iteration progress.
+        Update progress for a specific episode.
         
-        This callback runs inside parallel worker processes, so it needs
-        its own database connection.
+        This callback runs inside parallel worker processes and updates Redis
+        to track cumulative progress across all parallel episodes.
         
         Args:
-            iteration: Current iteration number
-            total: Total iterations
-            score: Current objective score
+            episode_index: The episode number (0-indexed)
+            intra_progress: Progress within this episode (0.0 to 1.0)
+            stage: Current stage (for logging, e.g., 'signal_generation')
         """
         import time
+        import redis
         import psycopg2
         
         try:
-            # Calculate percentage within THIS STEP (optimization is 0-100%)
-            step_pct = (iteration / total) * 100
+            # Connect to Redis
+            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            
+            # Update this episode's progress in Redis
+            episode_key = f"training_job:{self.job_id}:episode:{episode_index}"
+            
+            if intra_progress >= 1.0:
+                # Episode complete - remove from in-progress and increment completed count
+                r.delete(episode_key)
+                r.incr(f"training_job:{self.job_id}:completed_count")
+            else:
+                # Update in-progress
+                r.set(episode_key, intra_progress)
+            
+            # Calculate total progress from Redis
+            completed_count = int(r.get(f"training_job:{self.job_id}:completed_count") or 0)
+            
+            # Sum up all partial progress from in-flight episodes
+            partial_sum = 0.0
+            episode_keys = r.keys(f"training_job:{self.job_id}:episode:*")
+            for key in episode_keys:
+                partial_sum += float(r.get(key) or 0.0)
+            
+            # Total progress = completed episodes + partial progress from in-flight
+            total_progress_pct = ((completed_count + partial_sum) / self.total_episodes) * 100
             
             # Throttle logging to every 1 second
             current_time = time.time()
             if current_time - self.last_log_time >= 1.0:
-                log.info(f"🔔 Progress: iter {iteration}/{total} ({step_pct:.1f}%), score={score:.4f}")
+                log.info(f"🔔 Progress: {completed_count}/{self.total_episodes} complete, "
+                        f"{len(episode_keys)} in-flight, {total_progress_pct:.1f}% total")
                 self.last_log_time = current_time
             
-            # Update DB less frequently (every 5% or on iteration completion)
-            needs_update = (iteration % max(1, total // 20) == 0) or iteration == total
-            
-            if needs_update:
+            # Update database if progress changed by at least 0.5%
+            if abs(total_progress_pct - self.last_db_update_pct) >= 0.5:
                 try:
                     # Build connection from environment variables
                     db_host = os.getenv('DB_HOST', 'localhost')
@@ -74,39 +102,31 @@ class ProgressCallback:
                     )
                     cur = conn.cursor()
                     
-                    # Convert numpy types to Python natives and handle infinity
-                    score_value = float(score) if score is not None else None
-                    if score_value is not None and (score_value == float('inf') or score_value == float('-inf')):
-                        score_value = None  # Database can't store infinity
-                    
+                    # Update database with aggregated progress
                     cur.execute("""
                         UPDATE training_jobs
                         SET progress = %s,
                             current_episode = %s,
                             total_episodes = %s,
-                            current_reward = %s,
-                            current_loss = %s,
                             current_stage = 'Training'
                         WHERE id = %s
                     """, (
-                        round(step_pct, 2),
-                        iteration,
-                        total,
-                        score_value if score_value and score_value > 0 else None,
-                        abs(score_value) if score_value and score_value < 0 else None,
+                        round(total_progress_pct, 2),
+                        completed_count,  # Show only completed episodes
+                        self.total_episodes,
                         int(self.job_id)
                     ))
                     
                     conn.commit()
-                    cur.close()
                     conn.close()
                     
-                    log.info(f"✅ DB updated: {step_pct:.1f}% (iter {iteration}/{total})")
-                except Exception as e:
-                    log.error(f"❌ DB update failed: {e}")
+                    self.last_db_update_pct = total_progress_pct
                     
+                except Exception as e:
+                    log.debug(f"DB update failed: {e}")
+            
         except Exception as e:
-            log.error(f"❌ Callback error: {e}")
+            log.error(f"Progress callback failed: {e}", exc_info=True)
 
 
 def get_db_url() -> str:
@@ -224,17 +244,15 @@ async def _run_training_job_async(
         
         # Shared state for progress tracking (no interpolation thread - relying on real callbacks)
         log.info("🔧 Setting up progress tracking...")
-        import time
+        import redis
         
-        progress_state = {
-            'iteration': 0,
-            'total': n_iterations,
-            'score': 0.0,
-            'last_update_pct': 0.0
-        }
+        # Initialize Redis progress tracking
+        r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+        r.set(f"training_job:{job_id}:completed_count", 0)
+        r.set(f"training_job:{job_id}:total", n_iterations)
         
-        # Create picklable progress callback for iteration-level updates
-        optimization_progress_callback = ProgressCallback(job_id)
+        # Create picklable progress callback with cumulative tracking
+        optimization_progress_callback = ProgressCallback(job_id, n_iterations)
         log.info(f"✅ Progress callback created for job {job_id}")
         
         # Run optimization with all required parameters
