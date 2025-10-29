@@ -201,8 +201,8 @@ async def _run_training_job_async(
         await conn.close()
         log.info(f"Job {job_id} (ID #{training_job_int_id}) status set to 'running'")
         
-        # Initialize progress tracker
-        progress = ProgressTracker(job_id=job_id, db_url=db_url)
+        # Initialize progress tracker with both UUID and integer IDs
+        progress = ProgressTracker(job_id=job_id, db_url=db_url, job_id_int=training_job_int_id)
         
         # Step 1: Data Preparation (fast, don't show progress)
         log.info("🔧 Preparing data...")
@@ -383,7 +383,15 @@ async def _run_training_job_async(
         # Update progress with error
         try:
             db_url = get_db_url()
-            progress = ProgressTracker(job_id, db_url)
+            # Get integer ID for error logging
+            import asyncpg
+            conn = await asyncpg.connect(db_url)
+            training_job_int_id = await conn.fetchval(
+                "SELECT id FROM training_jobs WHERE job_id = $1", job_id
+            )
+            await conn.close()
+            
+            progress = ProgressTracker(job_id, db_url, job_id_int=training_job_int_id)
             await progress.error(str(e))
         except:
             pass

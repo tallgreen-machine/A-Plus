@@ -31,8 +31,9 @@ class ProgressTracker:
         'optimization': {'number': 1, 'name': 'Training', 'weight': 1.0},
     }
     
-    def __init__(self, job_id: str, db_url: str):
-        self.job_id = job_id
+    def __init__(self, job_id: str, db_url: str, job_id_int: Optional[int] = None):
+        self.job_id = job_id  # UUID for training_jobs.job_id (TEXT column)
+        self.job_id_int = job_id_int  # Integer ID for training_logs.job_id (INTEGER column)
         self.db_url = db_url
         self.current_step = None
         self.started_at = datetime.utcnow()
@@ -48,10 +49,15 @@ class ProgressTracker:
         log_level: str = 'INFO'
     ):
         """Save log entry to training_logs table via API."""
+        # Skip logging if we don't have the integer job_id
+        if self.job_id_int is None:
+            logger.warning(f"No integer job_id available for logging job {self.job_id}")
+            return
+            
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 await client.post(
-                    f"{self.api_url}/api/training/{self.job_id}/logs",
+                    f"{self.api_url}/api/training/{self.job_id_int}/logs",
                     json={
                         'timestamp': datetime.utcnow().isoformat(),
                         'message': message,
@@ -61,7 +67,7 @@ class ProgressTracker:
                 )
         except Exception as e:
             # Don't fail the job if logging fails
-            logger.warning(f"Failed to save log for job {self.job_id}: {e}")
+            logger.warning(f"Failed to save log for job {self.job_id} (ID #{self.job_id_int}): {e}")
         
     async def start(self, step_name: str, step_details: Optional[Dict[str, Any]] = None):
         """Start tracking a new step."""
@@ -172,20 +178,20 @@ class ProgressTracker:
                 )
                 
                 if job_data:
-                    # Build completion message with job details
+                    # Build completion message with job details (use integer job_id for display)
                     complete_message = (
-                        f"✓ Job #{self.job_id} | {job_data['strategy_name']} | "
+                        f"✓ Job #{self.job_id_int} | {job_data['strategy_name']} | "
                         f"{job_data['pair']} | {job_data['exchange']} | "
                         f"{job_data['timeframe']} | {job_data['regime']} | "
                         f"Completed successfully"
                     )
                 else:
-                    complete_message = f"✓ Job #{self.job_id} completed successfully"
+                    complete_message = f"✓ Job #{self.job_id_int} completed successfully"
             finally:
                 await conn.close()
         except Exception as e:
             logger.error(f"Failed to fetch job metadata: {e}")
-            complete_message = f"✓ Job #{self.job_id} completed successfully"
+            complete_message = f"✓ Job #{self.job_id_int} completed successfully"
         
         await self._save_log(
             message=complete_message,
