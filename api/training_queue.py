@@ -239,7 +239,7 @@ async def submit_training_job(request: TrainingJobCreate):
         queue = get_training_queue()
         rq_job = queue.enqueue(
             'training.rq_jobs.run_training_job',
-            str(row['id']),  # job_id as first positional argument
+            str(row['job_id']),  # job_id (UUID) as first positional argument
             request.strategy_name,  # strategy
             request.pair,  # symbol
             request.exchange,

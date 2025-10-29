@@ -166,9 +166,9 @@ class ProgressTracker:
                     """
                     SELECT strategy_name, pair, exchange, timeframe, regime, submitted_at
                     FROM training_jobs
-                    WHERE id = $1
+                    WHERE job_id = $1
                     """,
-                    int(self.job_id)
+                    self.job_id
                 )
                 
                 if job_data:
@@ -296,9 +296,9 @@ class ProgressTracker:
                 query = f"""
                     UPDATE training_jobs
                     SET {', '.join(updates)}
-                    WHERE id = ${param_idx}
+                    WHERE job_id = ${param_idx}
                 """
-                params.append(int(self.job_id))  # Convert string job_id to integer
+                params.append(self.job_id)  # Use UUID job_id directly
                 
                 await conn.execute(query, *params)
             

@@ -176,15 +176,15 @@ class ConfigurationWriter:
             metadata=metadata
         )
         
-        # Insert into database
-        await self._insert_to_database(config_json, lifecycle_stage)
+        # Insert into database and get the UUID
+        db_uuid = await self._insert_to_database(config_json, lifecycle_stage)
         
         log.info(
-            f"✅ Configuration saved: {config_id} "
+            f"✅ Configuration saved: {config_id} (DB UUID: {db_uuid}) "
             f"({lifecycle_stage}, confidence={confidence_score:.2f})"
         )
         
-        return config_id
+        return db_uuid  # Return database UUID for linking with training_jobs
     
     def _generate_config_id(
         self,
@@ -515,7 +515,9 @@ class ConfigurationWriter:
             regime = config_json.get('context', {}).get('regime', 'sideways')
             
             # Extract job_id from metadata if available
-            job_id = config_json.get('metadata', {}).get('job_id')
+            # trained_configurations.job_id is INTEGER (legacy column for UI display)
+            # The proper UUID linkage is via training_jobs.config_id FK
+            job_id = config_json.get('metadata', {}).get('job_id_int')
             
             # Extract data_filter_config from metadata (NEW)
             data_filter_config = config_json.get('metadata', {}).get('data_filter_config')
@@ -562,6 +564,8 @@ class ConfigurationWriter:
             await conn.close()
             
             log.debug(f"Configuration inserted to database: ID={result}, {config_json['configId']}")
+            
+            return result  # Return the database UUID, not the config name
             
         except Exception as e:
             log.error(f"Database insert failed: {e}")

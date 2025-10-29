@@ -55,12 +55,15 @@ class ProgressCallback:
             episode_key = f"training_job:{self.job_id}:episode:{episode_index}"
             
             if intra_progress >= 1.0:
-                # Episode complete - remove from in-progress and increment completed count
-                r.delete(episode_key)
-                r.incr(f"training_job:{self.job_id}:completed_count")
+                # Episode complete - only increment if not already counted
+                # This makes completion idempotent (safe to call multiple times)
+                if r.exists(episode_key):
+                    r.delete(episode_key)
+                    r.incr(f"training_job:{self.job_id}:completed_count")
             else:
                 # Update in-progress
-                r.set(episode_key, intra_progress)
+                # Convert to plain Python float to avoid numpy string representation
+                r.set(episode_key, float(intra_progress))
             
             # Calculate total progress from Redis
             completed_count = int(r.get(f"training_job:{self.job_id}:completed_count") or 0)
@@ -109,12 +112,12 @@ class ProgressCallback:
                             current_episode = %s,
                             total_episodes = %s,
                             current_stage = 'Training'
-                        WHERE id = %s
+                        WHERE job_id = %s
                     """, (
                         round(total_progress_pct, 2),
                         completed_count,  # Show only completed episodes
                         self.total_episodes,
-                        int(self.job_id)
+                        self.job_id
                     ))
                     
                     conn.commit()
@@ -185,12 +188,18 @@ async def _run_training_job_async(
         # Set job to 'running' immediately so frontend can start monitoring
         import asyncpg
         conn = await asyncpg.connect(db_url)
+        
+        # Get the integer database ID for this job (needed for trained_configurations.job_id)
+        training_job_int_id = await conn.fetchval(
+            "SELECT id FROM training_jobs WHERE job_id = $1", job_id
+        )
+        
         await conn.execute(
-            "UPDATE training_jobs SET status = 'running', started_at = NOW() WHERE id = $1",
-            int(job_id)
+            "UPDATE training_jobs SET status = 'running', started_at = NOW() WHERE job_id = $1",
+            job_id
         )
         await conn.close()
-        log.info(f"Job {job_id} status set to 'running'")
+        log.info(f"Job {job_id} (ID #{training_job_int_id}) status set to 'running'")
         
         # Initialize progress tracker
         progress = ProgressTracker(job_id=job_id, db_url=db_url)
@@ -339,10 +348,22 @@ async def _run_training_job_async(
             validation_result=validation_result,
             optimizer=optimizer,
             metadata={
-                'job_id': int(job_id),
+                'job_id': job_id,  # UUID for logging
+                'job_id_int': training_job_int_id,  # INTEGER for database display
                 'data_filter_config': data_filter_config  # NEW: Include filter settings in metadata
             }
         )
+        
+        # Update training_jobs with the saved configuration ID
+        import asyncpg
+        conn = await asyncpg.connect(db_url)
+        await conn.execute(
+            "UPDATE training_jobs SET config_id = $1 WHERE job_id = $2",
+            config_id,
+            job_id
+        )
+        await conn.close()
+        log.info(f"Linked training job {job_id} to configuration {config_id}")
         
         await progress.complete()
         

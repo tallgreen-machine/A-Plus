@@ -179,9 +179,6 @@ class GridSearchOptimizer:
                 result = evaluate_params((i, params))
                 if result is not None:
                     results.append(result)
-                    # Fire progress callback in sequential mode
-                    if progress_callback:
-                        progress_callback(len(results), total_combinations, result['objective_value'])
             
             for params_tuple in iterator:
                 result = evaluate_params(params_tuple)

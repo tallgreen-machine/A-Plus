@@ -34,7 +34,9 @@ training_system_available = False
 trained_assets_manager = None
 log.info("Training API: V2 system - RL components archived, awaiting implementation")
 
-router = APIRouter(prefix="/api/training", tags=["training"])
+# Legacy endpoints - kept for backward compatibility but not actively used
+# Main training functionality is in training_queue.py
+router = APIRouter(prefix="/api/training/legacy", tags=["training"])
 
 # Enhanced API endpoints for multi-dimensional training
 
@@ -371,136 +373,9 @@ async def get_asset_rankings(current_user: dict = Depends(get_current_user)):
     
     return sample_rankings
 
-@router.post("/start", response_model=Dict[str, str])
-async def start_training(
-    request: StartTrainingRequest,
-    background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user),
-    db=Depends(get_database)
-):
-    """Start a new training job"""
-    try:
-        job_id = str(uuid.uuid4())
-        
-        # Create training job record
-        training_jobs[job_id] = {
-            "jobId": job_id,
-            "userId": current_user["id"],
-            "symbols": request.symbols,
-            "patterns": request.patterns,
-            "timeframes": request.timeframes,
-            "status": "STARTED",
-            "phase": TrainingPhase.DATA_COLLECTION,
-            "progress": 0.0,
-            "message": "Initializing training job...",
-            "startedAt": datetime.utcnow().isoformat(),
-            "eta": "Calculating..."
-        }
-        
-        # Add background task to run training
-        background_tasks.add_task(run_training_job, job_id, request, current_user["id"])
-        
-        log.info(f"Started training job {job_id} for user {current_user['id']}")
-        
-        return {"jobId": job_id, "message": "Training job started successfully"}
-        
-    except Exception as e:
-        log.error(f"Error starting training job: {e}")
-        raise HTTPException(status_code=500, detail="Failed to start training job")
-
-async def update_training_status(job_id: str, status_update: dict):
-    """Callback function for training runner to update job status"""
-    if job_id in training_jobs:
-        training_jobs[job_id].update(status_update)
-        log.info(f"Updated training job {job_id}: {status_update.get('message', 'Status update')}")
-
-async def run_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
-    """Background task to run the actual ML training job"""
-    try:
-        # TODO: Implement V2 training runner
-        # from training.training_runner import TrainingRunner
-        
-        log.warning(f"Training job {job_id} - V2 training system not yet implemented")
-        
-        # Mark as failed (placeholder)
-        if job_id in training_jobs:
-            training_jobs[job_id].update({
-                "status": "FAILED",
-                "phase": TrainingPhase.COMPLETE,
-                "progress": 0.0,
-                "message": "V2 training system not yet implemented",
-                "error": "RL system archived - V2 implementation in progress"
-            })
-            
-        log.warning(f"Training job {job_id} - V2 system not ready")
-        
-    except Exception as e:
-        log.error(f"Error in training job {job_id}: {e}")
-        if job_id in training_jobs:
-            training_jobs[job_id].update({
-                "status": "FAILED",
-                "message": f"Training failed: {str(e)}",
-                "eta": "Failed"
-            })
-
-
-
-async def run_simulation_training_job(job_id: str, request: StartTrainingRequest, user_id: int):
-    """Fallback simulation training job (original implementation)"""
-    try:
-        job = training_jobs[job_id]
-        
-        # Simulate training phases (fallback for missing dependencies)
-        log.warning(f"Running simulation training for job {job_id} (real training unavailable)")
-        
-        phases = [
-            (TrainingPhase.DATA_COLLECTION, "Collecting historical market data..."),
-            (TrainingPhase.VIABILITY_ASSESSMENT, "Analyzing pattern viability..."),
-            (TrainingPhase.TIMEFRAME_TESTING, "Testing multiple timeframes..."),
-            (TrainingPhase.OPTIMIZATION, "Optimizing parameters..."),
-            (TrainingPhase.VALIDATION, "Running walk-forward validation..."),
-            (TrainingPhase.ROBUSTNESS, "Stress testing patterns..."),
-            (TrainingPhase.SCORING, "Calculating confidence scores..."),
-        ]
-        
-        for i, (phase, message) in enumerate(phases):
-            if job_id not in training_jobs:
-                break
-                
-            progress = (i + 1) / len(phases) * 100
-            eta_minutes = (len(phases) - i - 1) * 3  # Faster simulation
-            eta = f"{eta_minutes} minutes" if eta_minutes > 0 else "Complete"
-            
-            job.update({
-                "phase": phase,
-                "progress": progress,
-                "message": f"[SIMULATION] {message}",
-                "eta": eta
-            })
-            
-            # Simulate work
-            import asyncio
-            await asyncio.sleep(2)  # Reduced simulation time
-            
-        # Mark as complete
-        if job_id in training_jobs:
-            job.update({
-                "status": "COMPLETE",
-                "phase": TrainingPhase.COMPLETE,
-                "progress": 100.0,
-                "message": "Simulation training completed!",
-                "eta": "Complete",
-                "completedAt": datetime.utcnow().isoformat()
-            })
-            
-    except Exception as e:
-        log.error(f"Error in simulation training job {job_id}: {e}")
-        if job_id in training_jobs:
-            training_jobs[job_id].update({
-                "status": "FAILED",
-                "message": f"Simulation training failed: {str(e)}",
-                "eta": "Failed"
-            })
+# DEPRECATED: Mock training endpoints and functions removed.
+# Active training functionality is in training_queue.py
+# Use /api/training/submit to start training jobs.
 
 @router.get("/status/{job_id}", response_model=TrainingStatus)
 async def get_training_status(

@@ -168,10 +168,6 @@ class RandomSearchOptimizer:
                 if backtest_result.metrics['total_trades'] >= min_trades:
                     objective_value = backtest_result.metrics.get(objective, 0)
                     
-                    # Fire progress callback immediately (for parallel execution)
-                    if progress_callback:
-                        progress_callback(i + 1, len(all_params), objective_value)
-                    
                     return {
                         'parameters': params.copy(),
                         'metrics': backtest_result.metrics,
