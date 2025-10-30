@@ -162,21 +162,17 @@ class DataCollector:
             end_date=end_date
         )
         
-        # Step 2: If insufficient data, fetch from API
+        # Step 2: TRAINING MODE - Database only, no API fallback
+        # Training should NEVER make live exchange API calls
         if df.empty or len(df) < 100:
-            log.warning(
-                f"Database has insufficient data ({len(df)} candles). "
-                f"Fetching from API..."
+            raise ValueError(
+                f"Insufficient data in database for training: {symbol} on {exchange} {timeframe} "
+                f"(found {len(df)} candles, need at least 100). "
+                f"Please run data backfill before training: "
+                f"python data/historical_data_backfill.py --symbol {symbol} --exchange {exchange} --timeframe {timeframe}"
             )
-            df = await self._fetch_from_api_and_cache(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                start_date=start_date,
-                end_date=end_date
-            )
-        else:
-            log.info(f"✅ Database: {len(df)} candles loaded (50ms)")
+        
+        log.info(f"✅ Database: {len(df)} candles loaded (50ms)")
         
         # Validate data
         if df.empty:
