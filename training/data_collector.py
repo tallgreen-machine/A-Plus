@@ -1,12 +1,13 @@
 """
-DataCollector - Database-First OHLCV Data Fetching
+DataCollector - Database-Only OHLCV Data Fetching for Training
 
-Fetches market data for training with intelligent caching:
-1. Try database first (instant, 50ms)
-2. Fall back to API if missing (10s, then cache)
-3. Calculate technical indicators (ATR, SMA)
+Fetches market data for training from database ONLY:
+1. Query database (market_data table)
+2. Calculate technical indicators (ATR, SMA)
+3. Apply data quality filtering
 
-Performance: 360x faster than pure API approach.
+NEVER makes exchange API calls during training.
+Use data backfill scripts to populate database before training.
 """
 
 import pandas as pd
@@ -15,27 +16,26 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import logging
 import asyncpg
-import ccxt
-from ccxt.base.errors import NetworkError, ExchangeError
 
 log = logging.getLogger(__name__)
 
 
 class DataCollector:
     """
-    Fetches OHLCV data for strategy training.
+    Fetches OHLCV data for strategy training from DATABASE ONLY.
     
-    Priority:
-    1. Database (market_data table) - instant
-    2. API (CCXT) - slow, then cache
+    Database-only approach:
+    1. Query market_data table
+    2. Fail fast if data missing
+    3. Never make exchange API calls
     
     Example:
         collector = DataCollector()
-        df = collector.fetch_ohlcv(
+        df = await collector.fetch_ohlcv(
             symbol='BTC/USDT',
             exchange='binance',
             timeframe='5m',
-            lookback_days=90
+            lookback_candles=1000
         )
     """
     
@@ -48,8 +48,7 @@ class DataCollector:
                    Default: Loaded from environment/config
         """
         self.db_url = db_url or self._get_db_url()
-        self.exchanges = {}  # Lazy-loaded CCXT exchanges
-        log.info("DataCollector initialized (database-first mode)")
+        log.info("DataCollector initialized (DATABASE-ONLY mode for training)")
     
     def _get_db_url(self) -> str:
         """Get database URL from environment variables or config."""
@@ -298,159 +297,6 @@ class DataCollector:
         except Exception as e:
             log.error(f"Database fetch failed: {e}")
             return pd.DataFrame()
-    
-    async def _fetch_from_api_and_cache(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        start_date: datetime,
-        end_date: datetime
-    ) -> pd.DataFrame:
-        """
-        Fetch from exchange API (CCXT) and cache to database.
-        
-        Rate limits respected, automatic retry on network errors.
-        """
-        log.info(f"API: Fetching {symbol} from {exchange}...")
-        
-        try:
-            # Get CCXT exchange
-            ccxt_exchange = self._get_exchange(exchange)
-            
-            # Convert dates to timestamps
-            since = int(start_date.timestamp() * 1000)
-            until = int(end_date.timestamp() * 1000)
-            
-            # Fetch OHLCV
-            all_candles = []
-            current_since = since
-            
-            while current_since < until:
-                try:
-                    ohlcv = await ccxt_exchange.fetch_ohlcv(
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        since=current_since,
-                        limit=1000
-                    )
-                    
-                    if not ohlcv:
-                        break
-                    
-                    all_candles.extend(ohlcv)
-                    
-                    # Update since for next batch
-                    current_since = ohlcv[-1][0] + 1
-                    
-                    # Rate limit protection
-                    await ccxt_exchange.sleep(ccxt_exchange.rateLimit)
-                    
-                except (NetworkError, ExchangeError) as e:
-                    log.warning(f"API error (retrying): {e}")
-                    await ccxt_exchange.sleep(2000)
-                    continue
-            
-            if not all_candles:
-                log.error(f"API: No data returned for {symbol}")
-                return pd.DataFrame()
-            
-            # Convert to DataFrame
-            df = pd.DataFrame(
-                all_candles,
-                columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            )
-            
-            # Filter to requested range
-            df = df[
-                (df['timestamp'] >= since) &
-                (df['timestamp'] <= until)
-            ]
-            
-            log.info(f"API: {len(df)} candles fetched")
-            
-            # Cache to database
-            await self._cache_to_database(
-                df=df,
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe
-            )
-            
-            return df
-            
-        except Exception as e:
-            log.error(f"API fetch failed: {e}")
-            return pd.DataFrame()
-    
-    def _get_exchange(self, exchange_name: str):
-        """Get or create CCXT exchange instance."""
-        exchange_name = exchange_name.lower()
-        
-        if exchange_name not in self.exchanges:
-            exchange_class = getattr(ccxt, exchange_name, None)
-            if not exchange_class:
-                raise ValueError(f"Exchange '{exchange_name}' not supported by CCXT")
-            
-            self.exchanges[exchange_name] = exchange_class({
-                'enableRateLimit': True,
-                'options': {'defaultType': 'spot'}
-            })
-            
-            log.debug(f"Initialized CCXT exchange: {exchange_name}")
-        
-        return self.exchanges[exchange_name]
-    
-    async def _cache_to_database(
-        self,
-        df: pd.DataFrame,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ):
-        """
-        Cache fetched data to market_data table.
-        
-        Uses INSERT ... ON CONFLICT DO NOTHING to avoid duplicates.
-        """
-        if df.empty:
-            return
-        
-        try:
-            conn = await asyncpg.connect(self.db_url)
-            
-            # Prepare values for batch insert
-            records = [
-                (
-                    symbol,
-                    exchange.lower(),
-                    timeframe,
-                    int(row['timestamp']),
-                    float(row['open']),
-                    float(row['high']),
-                    float(row['low']),
-                    float(row['close']),
-                    float(row['volume'])
-                )
-                for _, row in df.iterrows()
-            ]
-            
-            # Batch insert (ignore duplicates)
-            query = """
-                INSERT INTO market_data 
-                    (symbol, exchange, timeframe, timestamp, open, high, low, close, volume)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                ON CONFLICT (symbol, exchange, timeframe, timestamp) 
-                DO NOTHING
-            """
-            
-            await conn.executemany(query, records)
-            await conn.close()
-            
-            log.info(f"✅ Cached {len(records)} candles to database")
-            
-        except Exception as e:
-            log.error(f"Cache to database failed: {e}")
     
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
