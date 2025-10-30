@@ -163,7 +163,8 @@ async def _run_training_job_async(
     lookback_candles: int,  # Changed from lookback_days to lookback_candles
     n_iterations: int,
     run_validation: bool,
-    data_filter_config: Dict[str, Any] = None  # NEW: Data quality filtering config
+    data_filter_config: Dict[str, Any] = None,  # Data quality filtering config
+    seed: int = 42  # NEW: Seed for reproducible parameter optimization
 ) -> Dict[str, Any]:
     """
     Execute training job in worker process.
@@ -239,17 +240,17 @@ async def _run_training_job_async(
         parameter_space = temp_strategy.get_parameter_space()
         log.info(f"✅ Parameter space obtained: {len(parameter_space)} parameters")
         
-        # Select optimizer (don't pass n_iterations to __init__)
-        log.info(f"🔧 Initializing {optimizer} optimizer...")
+        # Select optimizer with seed for reproducibility
+        log.info(f"🔧 Initializing {optimizer} optimizer with seed={seed}...")
         if optimizer == 'bayesian':
-            opt = BayesianOptimizer()
+            opt = BayesianOptimizer(random_state=seed)  # ✅ WITH SEED
         elif optimizer == 'random':
-            opt = RandomSearchOptimizer()
+            opt = RandomSearchOptimizer(seed=seed)  # ✅ WITH SEED
         elif optimizer == 'grid':
-            opt = GridSearchOptimizer()
+            opt = GridSearchOptimizer()  # No seed needed - deterministic by nature
         else:
             raise ValueError(f"Unknown optimizer: {optimizer}")
-        log.info(f"✅ Optimizer initialized: {opt.__class__.__name__}")
+        log.info(f"✅ Optimizer initialized: {opt.__class__.__name__} (seed={seed} for reproducibility)")
         
         # Shared state for progress tracking (no interpolation thread - relying on real callbacks)
         log.info("🔧 Setting up progress tracking...")
@@ -413,7 +414,8 @@ def run_training_job(
     lookback_candles: int,  # Changed from lookback_days
     n_iterations: int,
     run_validation: bool,
-    data_filter_config: Dict[str, Any] = None  # NEW: Data quality filtering config
+    data_filter_config: Dict[str, Any] = None,  # Data quality filtering config
+    seed: int = 42  # NEW: Seed for reproducible parameter optimization
 ) -> Dict[str, Any]:
     """
     Sync wrapper for the training job (called by RQ).
@@ -421,5 +423,5 @@ def run_training_job(
     """
     return asyncio.run(_run_training_job_async(
         job_id, strategy, symbol, exchange, timeframe, regime,
-        optimizer, lookback_candles, n_iterations, run_validation, data_filter_config
+        optimizer, lookback_candles, n_iterations, run_validation, data_filter_config, seed
     ))

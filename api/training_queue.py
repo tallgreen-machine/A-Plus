@@ -142,9 +142,8 @@ class TrainingJobCreate(BaseModel):
     lookback_days: Optional[int] = None  # Deprecated: kept for backward compatibility
     optimizer: str = "bayesian"
     n_iterations: int = 200
+    seed: int = 42  # NEW: Seed for reproducible parameter optimization
     data_filter_config: Optional[Dict[str, Any]] = None  # NEW: Data quality filtering settings
-    # Data quality filtering (NEW)
-    data_filter_config: Optional[Dict[str, Any]] = None
 
 class TrainingJobResponse(BaseModel):
     """Training job info for queue display"""
@@ -214,9 +213,9 @@ async def submit_training_job(request: TrainingJobCreate):
             INSERT INTO training_jobs (
                 config_id, status, strategy, symbol, exchange, timeframe, regime,
                 strategy_name, pair, optimizer, lookback_candles, lookback_days, n_iterations, 
-                data_filter_config, submitted_at, job_id
+                seed, data_filter_config, submitted_at, job_id
             )
-            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, $12, $13::jsonb, NOW(), $14)
+            VALUES ($1, 'pending', $2::text, $3::text, $4, $5, $6, $7::varchar, $8::varchar, $9, $10, $11, $12, $13, $14::jsonb, NOW(), $15)
             RETURNING *
             """,
             config_id_uuid,
@@ -231,8 +230,9 @@ async def submit_training_job(request: TrainingJobCreate):
             lookback_candles,       # $10 - lookback_candles
             lookback_days,          # $11 - lookback_days (kept for backward compatibility)
             request.n_iterations,   # $12 - n_iterations
-            filter_config_json,     # $13 - data_filter_config (JSONB)
-            str(uuid.uuid4())       # $14 - job_id
+            request.seed,           # $13 - seed (NEW: for reproducibility)
+            filter_config_json,     # $14 - data_filter_config (JSONB)
+            str(uuid.uuid4())       # $15 - job_id
         )
         
         # Enqueue to RQ worker
@@ -249,7 +249,8 @@ async def submit_training_job(request: TrainingJobCreate):
             lookback_candles,  # Now passing candles instead of days
             request.n_iterations,
             True,  # run_validation
-            request.data_filter_config,  # NEW: Pass filter config to worker
+            request.data_filter_config,  # Pass filter config to worker
+            request.seed,  # NEW: Pass seed for reproducibility
             job_timeout=43200  # 12 hours - allows for large datasets (60+ days, 17k+ candles)
         )
         

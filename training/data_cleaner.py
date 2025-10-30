@@ -251,8 +251,8 @@ class DataCleaner:
         if len(df) == 0:
             return {'error': 'Empty dataframe'}
         
-        # Sample random candles
-        sample = df.sample(min(sample_size, len(df)))
+        # Sample candles deterministically for reproducible quality checks
+        sample = df.sample(min(sample_size, len(df)), random_state=42)
         
         inspections = []
         for idx, row in sample.iterrows():
