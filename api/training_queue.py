@@ -185,13 +185,6 @@ async def submit_training_job(request: TrainingJobCreate):
     Creates database record and enqueues job to RQ worker
     """
     try:
-        # TEMPORARY: Disable grid search optimizer
-        if request.optimizer == "grid":
-            raise HTTPException(
-                status_code=400,
-                detail="Grid search optimizer is temporarily disabled due to performance issues. Please use 'random' or 'bayesian' optimizer."
-            )
-        
         conn = await asyncpg.connect(get_db_url())
         
         # Backward compatibility: support both candles and days
