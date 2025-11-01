@@ -252,6 +252,8 @@ class DataCollector:
         start_ts = int(start_date.timestamp() * 1000)
         end_ts = int(end_date.timestamp() * 1000)
         
+        # TRAINING MODE: Fetch most recent N candles, regardless of date
+        # Don't filter by start_date/end_date as data may not be real-time
         query = """
             SELECT 
                 timestamp,
@@ -265,10 +267,20 @@ class DataCollector:
                 symbol = $1
                 AND exchange = $2
                 AND timeframe = $3
-                AND timestamp >= $4
-                AND timestamp <= $5
-            ORDER BY timestamp ASC
+            ORDER BY timestamp DESC
+            LIMIT $4
         """
+        
+        # Calculate how many candles to fetch based on lookback period
+        # Add 20% buffer to account for potential data quality filtering
+        minutes_per_candle = {
+            '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+            '1h': 60, '2h': 120, '4h': 240,
+            '1d': 1440, '1w': 10080
+        }.get(timeframe, 5)
+        
+        total_minutes = (end_date - start_date).total_seconds() / 60
+        estimated_candles = int(total_minutes / minutes_per_candle * 1.2)  # 20% buffer
         
         try:
             conn = await asyncpg.connect(self.db_url)
@@ -277,8 +289,7 @@ class DataCollector:
                 symbol,
                 exchange.lower(),
                 timeframe,
-                start_ts,
-                end_ts
+                estimated_candles
             )
             await conn.close()
             
@@ -290,6 +301,9 @@ class DataCollector:
                 rows,
                 columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
             )
+            
+            # Reverse order since we fetched DESC (most recent first)
+            df = df.sort_values('timestamp', ascending=True).reset_index(drop=True)
             
             log.debug(f"Database: {len(df)} candles retrieved")
             return df

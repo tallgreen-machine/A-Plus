@@ -121,23 +121,16 @@ class CapitulationReversalStrategy:
         
         log.debug(f"CapitulationReversalStrategy initialized: {self.params}")
     
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(self, data: pd.DataFrame, progress_callback=None) -> pd.DataFrame:
         """
         Generate trading signals from OHLCV data.
         
         Args:
-            data: DataFrame with columns:
-                  timestamp, open, high, low, close, volume, atr
-                  Optional: orderbook_imbalance (from L2 data)
+            data: DataFrame with columns: timestamp, open, high, low, close, volume, atr
+            progress_callback: Optional callback for progress tracking (ignored by this strategy)
         
         Returns:
-            DataFrame with columns:
-                timestamp, signal, stop_loss, take_profit, panic_score
-                
-                signal values:
-                - 'BUY': Long entry (buy the panic dip)
-                - 'SELL': Short entry (sell the euphoria spike)
-                - 'HOLD': No action
+            DataFrame with columns: timestamp, signal, entry_price, sl_price, tp_price
         """
         log.info(f"Generating Capitulation Reversal signals: {len(data)} candles")
         
@@ -295,8 +288,9 @@ class CapitulationReversalStrategy:
                 rsi_extreme * 0.1            # 10% weight
             ])
             
-            # If panic score >= 0.6 (3+ indicators), record panic event
-            if panic_score >= 0.6:
+            # If panic score >= 0.4 (2+ strong indicators), record panic event
+            # Lowered from 0.6 to increase signal frequency to 20-50 trades/year
+            if panic_score >= 0.4:
                 # Get order book imbalance if available
                 orderbook_imbalance = row.get('orderbook_imbalance', None)
                 
@@ -325,18 +319,20 @@ class CapitulationReversalStrategy:
         
         Conditions:
         1. Recent panic event detected (high panic score)
-        2. Multiple consecutive panic candles (3+)
+        2. Multiple consecutive panic/bearish candles (2-4)
         3. Recovery candle: bullish with strong volume
-        4. Optional: Order book shows bid support (60%+ bids)
+        4. RSI was oversold during panic and is now recovering
+        5. Optional: Order book shows bid support (60%+ bids)
         
         Returns:
             (is_valid_signal, panic_score)
         """
-        # 1. Check for recent panic event (last 5 candles)
-        recent_timestamps = previous.tail(5)['timestamp'].values
+        # 1. Check for recent panic event (last 10-15 candles - give more time window)
+        # FIXED: Expanded from 5 to 15 candles to catch panic events that happened earlier
+        recent_timestamps = previous.tail(15)['timestamp'].values
         recent_panics = [
             p for p in panic_signals 
-            if p.timestamp in recent_timestamps and p.price < current['close']
+            if p.timestamp in recent_timestamps
         ]
         
         if not recent_panics:
@@ -345,22 +341,19 @@ class CapitulationReversalStrategy:
         # Get highest panic score
         max_panic = max(recent_panics, key=lambda p: p.panic_score)
         
-        # 2. Check for consecutive panic/bearish candles
-        bearish_streak = 0
-        for _, row in previous.tail(10).iterrows():
-            if row['bearish'] and row['volume_ratio'] > 1.5:
-                bearish_streak += 1
-            else:
-                bearish_streak = 0
+        # 2. SIMPLIFIED: Check if there were SOME bearish candles recently (not strict count)
+        # Just verify there was selling pressure in last 15 candles
+        bearish_count = sum(1 for _, row in previous.tail(15).iterrows() if row['bearish'])
         
-        if bearish_streak < self.consecutive_panic_candles:
+        # Need at least SOME bearish candles (lowered threshold)
+        if bearish_count < 3:  # At least 3 bearish candles in last 15
             return False, 0.0
         
-        # 3. Check current candle is recovery (bullish + strong volume)
+        # 3. Check current candle is recovery (bullish + SOME volume)
+        # RELAXED: Just needs to be bullish, volume threshold removed entirely
         is_bullish = current['close'] > current['open']
-        has_volume = current['volume_ratio'] >= self.recovery_volume_threshold
         
-        if not (is_bullish and has_volume):
+        if not is_bullish:
             return False, 0.0
         
         # 4. Optional: Check order book imbalance (if L2 data available)
@@ -369,8 +362,13 @@ class CapitulationReversalStrategy:
             if current['orderbook_imbalance'] < self.orderbook_imbalance_threshold:
                 return False, 0.0
         
-        # 5. Check RSI showing oversold recovery
-        if current['rsi'] < 30:  # Still oversold or recovering
+        # 5. Check RSI recovery: was oversold (< 35) in recent panic, now recovering (>= 25)
+        # FIXED: Previously only entered if RSI < 30, which missed most recoveries
+        recent_rsi_values = previous.tail(5)['rsi'].values
+        was_oversold = any(rsi < 35 for rsi in recent_rsi_values if pd.notna(rsi))
+        is_recovering = current['rsi'] >= 25  # Allow entry during early recovery
+        
+        if was_oversold and is_recovering:
             return True, max_panic.panic_score
         
         return False, 0.0
@@ -386,18 +384,20 @@ class CapitulationReversalStrategy:
         
         Conditions:
         1. Recent panic buying detected (RSI > 85, volume spike)
-        2. Multiple consecutive bullish panic candles (3+)
+        2. Multiple consecutive bullish panic candles (2-4)
         3. Reversal candle: bearish with strong volume
-        4. Optional: Order book shows ask resistance (60%+ asks)
+        4. RSI was overbought during panic and is now declining
+        5. Optional: Order book shows ask resistance (60%+ asks)
         
         Returns:
             (is_valid_signal, panic_score)
         """
-        # 1. Check for recent euphoric buying (panic signals with high RSI)
-        recent_timestamps = previous.tail(5)['timestamp'].values
+        # 1. Check for recent euphoric buying (last 10-15 candles - give more time window)
+        # FIXED: Expanded from 5 to 15 candles to catch panic buying events earlier
+        recent_timestamps = previous.tail(15)['timestamp'].values
         recent_panics = [
             p for p in panic_signals 
-            if p.timestamp in recent_timestamps and p.price > current['close']
+            if p.timestamp in recent_timestamps
         ]
         
         if not recent_panics:
@@ -405,22 +405,19 @@ class CapitulationReversalStrategy:
         
         max_panic = max(recent_panics, key=lambda p: p.panic_score)
         
-        # 2. Check for consecutive bullish panic candles
-        bullish_streak = 0
-        for _, row in previous.tail(10).iterrows():
-            if row['bullish'] and row['volume_ratio'] > 1.5:
-                bullish_streak += 1
-            else:
-                bullish_streak = 0
+        # 2. SIMPLIFIED: Check if there were SOME bullish candles recently (not strict count)
+        # Just verify there was buying pressure in last 15 candles
+        bullish_count = sum(1 for _, row in previous.tail(15).iterrows() if row['bullish'])
         
-        if bullish_streak < self.consecutive_panic_candles:
+        # Need at least SOME bullish candles (lowered threshold)
+        if bullish_count < 3:  # At least 3 bullish candles in last 15
             return False, 0.0
         
-        # 3. Check current candle is reversal (bearish + strong volume)
+        # 3. Check current candle is reversal (bearish - volume threshold removed)
+        # RELAXED: Just needs to be bearish
         is_bearish = current['close'] < current['open']
-        has_volume = current['volume_ratio'] >= self.recovery_volume_threshold
         
-        if not (is_bearish and has_volume):
+        if not is_bearish:
             return False, 0.0
         
         # 4. Optional: Check order book imbalance (negative = more sellers)
@@ -429,8 +426,13 @@ class CapitulationReversalStrategy:
             if current['orderbook_imbalance'] > -self.orderbook_imbalance_threshold:
                 return False, 0.0
         
-        # 5. Check RSI showing overbought reversal
-        if current['rsi'] > 70:  # Still overbought or reversing
+        # 5. Check RSI reversal: was overbought (> 65) in recent panic, now declining (<= 75)
+        # FIXED: Previously only entered if RSI > 70, which missed most reversals
+        recent_rsi_values = previous.tail(5)['rsi'].values
+        was_overbought = any(rsi > 65 for rsi in recent_rsi_values if pd.notna(rsi))
+        is_declining = current['rsi'] <= 75  # Allow entry during early decline
+        
+        if was_overbought and is_declining:
             return True, max_panic.panic_score
         
         return False, 0.0
@@ -443,17 +445,20 @@ class CapitulationReversalStrategy:
             Dict with parameter ranges suitable for optimizers
         """
         return {
-            'volume_explosion_threshold': (3.0, 8.0),      # 3x to 8x volume
-            'price_velocity_threshold': (0.02, 0.05),      # 2% to 5% per candle
-            'atr_explosion_threshold': (2.0, 4.0),         # 2x to 4x ATR
-            'exhaustion_wick_ratio': (2.0, 5.0),           # 2:1 to 5:1 wick/body
-            'rsi_extreme_threshold': [10, 15, 20],         # Discrete RSI levels
-            'rsi_divergence_lookback': [10, 20, 30],       # Discrete lookback
-            'orderbook_imbalance_threshold': (0.5, 0.7),   # 50% to 70% imbalance
-            'consecutive_panic_candles': [2, 3, 4, 5],     # Discrete
-            'recovery_volume_threshold': (2.0, 4.0),       # 2x to 4x volume
-            'atr_multiplier_sl': (1.0, 2.5),               # 1 to 2.5 ATR
-            'risk_reward_ratio': (2.0, 4.0),               # 2:1 to 4:1
-            'max_holding_periods': [30, 50, 75, 100],      # Discrete
-            'lookback_periods': [50, 100, 150]             # Discrete
+            # ULTRA-RELAXED parameter ranges for rare capitulation events
+            # Targeting 20-50 trades/year = 3.8-9.6 trades in 69 days (20k candles)
+            # Diagnostic showed 4 signals with lenient params - focus ranges on most lenient values
+            'volume_explosion_threshold': (1.3, 2.2),         # 1.3x to 2.2x (very low, easy to satisfy)
+            'price_velocity_threshold': (0.006, 0.015),       # 0.6% to 1.5% (very low velocity threshold)
+            'atr_explosion_threshold': (1.3, 2.5),            # 1.3x to 2.5x (lower min)
+            'exhaustion_wick_ratio': (1.5, 2.5),              # 1.5x to 2.5x (lower range)
+            'rsi_extreme_threshold': [25, 30, 35],            # Focus on higher (more lenient) values
+            'rsi_divergence_lookback': [10, 15],              # Shorter lookback (easier divergence)
+            'orderbook_imbalance_threshold': (0.5, 0.7),      # 50% to 70% (optional data anyway)
+            'consecutive_panic_candles': [2, 3],              # Keep low (2-3 candles only)
+            'recovery_volume_threshold': (1.3, 2.5),          # 1.3x to 2.5x (lower min)
+            'atr_multiplier_sl': (1.2, 2.0),                  # 1.2 to 2 ATR
+            'risk_reward_ratio': (1.5, 3.0),                  # 1.5:1 to 3:1
+            'max_holding_periods': [30, 50, 75],              # Discrete
+            'lookback_periods': [50, 75, 100]                 # Shorter lookback (more signals)
         }

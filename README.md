@@ -73,9 +73,7 @@ ssh root@138.68.245.159 "sudo -u postgres psql -d trad -f /srv/trad/sql/013_add_
 
 1. **From Server (Recommended)**:
    ```bash
-   ssh root@138.68.245.159
-   source /etc/trad/trad.env
-   PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME"
+    (cd /workspaces/Trad && SERVER=138.68.245.159 SSH_USER=root DEST=/srv/trad bash ops/scripts/deploy_to_server.sh)
    ```
 
 2. **For Migrations (Use postgres user)**:

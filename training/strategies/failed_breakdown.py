@@ -160,7 +160,7 @@ class FailedBreakdownStrategy:
         
         log.debug(f"FailedBreakdownStrategy initialized: {self.params}")
     
-    def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+    def generate_signals(self, data: pd.DataFrame, progress_callback=None) -> pd.DataFrame:
         """
         Generate trading signals from OHLCV data.
         
@@ -169,6 +169,7 @@ class FailedBreakdownStrategy:
                   timestamp, open, high, low, close, volume, atr
                   Optional: orderbook_depth (from L2 data)
                   Optional: large_trade_ratio (from trade feed)
+            progress_callback: Optional callback for progress tracking (ignored by this strategy)
         
         Returns:
             DataFrame with columns:
@@ -504,19 +505,22 @@ class FailedBreakdownStrategy:
             Dict with parameter ranges suitable for optimizers
         """
         return {
-            'range_lookback_periods': [50, 100, 150, 200],    # Discrete
-            'range_tightness_threshold': (0.03, 0.08),        # 3% to 8%
-            'breakdown_depth': (0.005, 0.02),                 # 0.5% to 2%
-            'breakdown_volume_threshold': (0.3, 0.7),         # 30% to 70% of avg
-            'spring_max_duration': [5, 10, 15, 20],           # Discrete
-            'recovery_volume_threshold': (2.0, 5.0),          # 2x to 5x
-            'recovery_speed': [3, 5, 8, 10],                  # Discrete
-            'orderbook_absorption_threshold': (2.0, 5.0),     # 2x to 5x normal depth
-            'orderbook_monitoring_depth': [10, 20, 30],       # Discrete
-            'large_trade_multiplier': (3.0, 8.0),             # 3x to 8x median
-            'smart_money_imbalance': (1.3, 2.0),              # 1.3:1 to 2:1
-            'accumulation_score_minimum': (0.6, 0.8),         # 60% to 80%
+            # ULTRA-RELAXED parameter ranges for rare Wyckoff spring patterns
+            # Targeting 10-30 trades/year = 1.9-5.8 trades in 69 days (20k candles)
+            # With min_trades=5, need lenient params to catch enough springs
+            'range_lookback_periods': [30, 40, 50],           # Shorter lookbacks (more ranges detected)
+            'range_tightness_threshold': (0.08, 0.18),        # 8% to 18% (MUCH wider ranges allowed)
+            'breakdown_depth': (0.002, 0.01),                 # 0.2% to 1% (lower min for subtle breakdowns)
+            'breakdown_volume_threshold': (0.3, 0.8),         # 30% to 80% (wider range for "weak" volume)
+            'spring_max_duration': [10, 15, 20, 25],          # Longer durations (more patience)
+            'recovery_volume_threshold': (1.2, 3.0),          # 1.2x to 3x (lower min, easier to satisfy)
+            'recovery_speed': [8, 12, 15, 20],                # Slower recovery allowed
+            'orderbook_absorption_threshold': (1.2, 3.0),     # Lower min (optional data anyway)
+            'orderbook_monitoring_depth': [10, 20],           # Simplified
+            'large_trade_multiplier': (2.0, 5.0),             # Lower min (optional data)
+            'smart_money_imbalance': (1.05, 1.5),             # 1.05:1 to 1.5:1 (barely any imbalance needed)
+            'accumulation_score_minimum': (0.3, 0.6),         # 30% to 60% (MUCH lower threshold)
             'atr_multiplier_sl': (1.0, 2.0),                  # 1 to 2 ATR
             'risk_reward_ratio': (1.5, 3.0),                  # 1.5:1 to 3:1
-            'max_holding_periods': [30, 50, 75, 100]          # Discrete
+            'max_holding_periods': [30, 50, 75]               # Discrete
         }

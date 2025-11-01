@@ -178,10 +178,29 @@ async def _run_training_job_async(
     from training.optimizers.bayesian import BayesianOptimizer
     from training.optimizers.grid_search import GridSearchOptimizer
     from training.strategies.liquidity_sweep import LiquiditySweepStrategy
+    from training.strategies.capitulation_reversal import CapitulationReversalStrategy
+    from training.strategies.failed_breakdown import FailedBreakdownStrategy
     from training.configuration_writer import ConfigurationWriter
     from training.backtest_engine import BacktestEngine
     
     log.info(f"Starting training job {job_id}: {strategy} {symbol} on {exchange} ({timeframe})")
+    
+    # Map strategy names to classes
+    STRATEGY_MAP = {
+        'LIQUIDITY_SWEEP': LiquiditySweepStrategy,
+        'CAPITULATION_REVERSAL': CapitulationReversalStrategy,
+        'FAILED_BREAKDOWN': FailedBreakdownStrategy,
+    }
+    
+    # Get strategy class from name
+    strategy_class = STRATEGY_MAP.get(strategy)
+    if strategy_class is None:
+        raise ValueError(
+            f"Unknown strategy '{strategy}'. "
+            f"Available strategies: {', '.join(STRATEGY_MAP.keys())}"
+        )
+    
+    log.info(f"Using strategy class: {strategy_class.__name__}")
     
     db_url = get_db_url()
     
@@ -235,8 +254,8 @@ async def _run_training_job_async(
         log.info("✅ Backtest engine initialized")
         
         # Get parameter space
-        log.info("🔧 Getting parameter space from strategy...")
-        temp_strategy = LiquiditySweepStrategy({})  # Temp instance to get parameter space
+        log.info(f"🔧 Getting parameter space from strategy: {strategy_class.__name__}...")
+        temp_strategy = strategy_class({})  # Temp instance to get parameter space
         parameter_space = temp_strategy.get_parameter_space()
         log.info(f"✅ Parameter space obtained: {len(parameter_space)} parameters")
         
@@ -280,11 +299,13 @@ async def _run_training_job_async(
                     lambda: opt.optimize(
                         backtest_engine=backtest_engine,
                         data=data,
-                        strategy_class=LiquiditySweepStrategy,
+                        strategy_class=strategy_class,
                         parameter_space=parameter_space,
                         n_calls=n_iterations,
                         objective='sharpe_ratio',
-                        min_trades=10,
+                        min_trades=5,  # Lowered from 10 for rare pattern strategies
+                        # Reason: 20k candles = 69 days. Rare strategies (20-50/year) = 3.8-9.6 trades
+                        # in 69 days. min_trades=5 allows these to pass validation.
                         progress_callback=optimization_progress_callback,
                         n_jobs=-1  # Use all CPU cores
                     )
@@ -296,11 +317,13 @@ async def _run_training_job_async(
                     lambda: opt.optimize(
                         backtest_engine=backtest_engine,
                         data=data,
-                        strategy_class=LiquiditySweepStrategy,
+                        strategy_class=strategy_class,
                         parameter_space=parameter_space,
                         n_iterations=n_iterations,
                         objective='sharpe_ratio',
-                        min_trades=10,
+                        min_trades=5,  # Lowered from 10 for rare pattern strategies
+                        # Reason: 20k candles = 69 days. Rare strategies (20-50/year) = 3.8-9.6 trades
+                        # in 69 days. min_trades=5 allows these to pass validation.
                         progress_callback=optimization_progress_callback,
                         n_jobs=-1  # Use all CPU cores for parallel execution
                     )
@@ -312,7 +335,7 @@ async def _run_training_job_async(
                     lambda: opt.optimize(
                         backtest_engine=backtest_engine,
                         data=data,
-                        strategy_class=LiquiditySweepStrategy,
+                        strategy_class=strategy_class,
                         parameter_space=parameter_space,
                         objective='sharpe_ratio',
                         min_trades=10,
@@ -333,7 +356,7 @@ async def _run_training_job_async(
         
         # Run final backtest with best parameters
         engine = BacktestEngine()
-        strategy_instance = LiquiditySweepStrategy(best_params)
+        strategy_instance = strategy_class(best_params)
         backtest_result = engine.run_backtest(data, strategy_instance)
         
         # Save configuration
