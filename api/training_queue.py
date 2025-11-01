@@ -694,16 +694,19 @@ async def get_recent_training_logs(limit: int = 100) -> List[TrainingLogResponse
         db_url = get_db_url()
         conn = await asyncpg.connect(db_url)
         
-        # Fetch recent logs across all jobs
+        # Fetch recent logs across all jobs (newest first, then reverse for display)
         logs = await conn.fetch(
             """
             SELECT tl.id, tl.job_id, tl.timestamp, tl.message, tl.progress, tl.log_level, tl.created_at
             FROM training_logs tl
-            ORDER BY tl.timestamp ASC
+            ORDER BY tl.timestamp DESC
             LIMIT $1
             """,
             limit
         )
+        
+        # Reverse to get chronological order (oldest to newest) for display
+        logs = list(reversed(logs))
         
         await conn.close()
         

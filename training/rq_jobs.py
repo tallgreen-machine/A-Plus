@@ -284,6 +284,15 @@ async def _run_training_job_async(
         optimization_progress_callback = ProgressCallback(job_id, n_iterations)
         log.info(f"✅ Progress callback created for job {job_id}")
         
+        # Determine min_trades threshold based on strategy
+        # FAILED_BREAKDOWN is extremely rare (10-30 trades/year), so we lower the threshold
+        if strategy == 'FAILED_BREAKDOWN':
+            min_trades_threshold = 3  # Wyckoff springs are very rare patterns
+        else:
+            min_trades_threshold = 5  # Standard threshold for other strategies
+        
+        log.info(f"Using min_trades={min_trades_threshold} for {strategy} strategy")
+        
         # Run optimization with all required parameters
         # Run in executor to avoid blocking the event loop
         log.info(f"🚀 Starting {optimizer} optimization with {n_iterations} iterations...")
@@ -303,9 +312,7 @@ async def _run_training_job_async(
                         parameter_space=parameter_space,
                         n_calls=n_iterations,
                         objective='sharpe_ratio',
-                        min_trades=5,  # Lowered from 10 for rare pattern strategies
-                        # Reason: 20k candles = 69 days. Rare strategies (20-50/year) = 3.8-9.6 trades
-                        # in 69 days. min_trades=5 allows these to pass validation.
+                        min_trades=min_trades_threshold,
                         progress_callback=optimization_progress_callback,
                         n_jobs=-1  # Use all CPU cores
                     )
@@ -321,9 +328,7 @@ async def _run_training_job_async(
                         parameter_space=parameter_space,
                         n_iterations=n_iterations,
                         objective='sharpe_ratio',
-                        min_trades=5,  # Lowered from 10 for rare pattern strategies
-                        # Reason: 20k candles = 69 days. Rare strategies (20-50/year) = 3.8-9.6 trades
-                        # in 69 days. min_trades=5 allows these to pass validation.
+                        min_trades=min_trades_threshold,
                         progress_callback=optimization_progress_callback,
                         n_jobs=-1  # Use all CPU cores for parallel execution
                     )

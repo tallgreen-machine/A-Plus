@@ -146,7 +146,11 @@ class CapitulationReversalStrategy:
         # Generate trading signals
         signals = []
         
-        for idx in range(self.lookback_periods, len(df)):
+        # Calculate total iterations for progress tracking
+        total_iterations = len(df) - self.lookback_periods
+        update_frequency = max(1, total_iterations // 100)  # Update ~100 times (every 1%)
+        
+        for i, idx in enumerate(range(self.lookback_periods, len(df))):
             row = df.iloc[idx]
             prev_rows = df.iloc[max(0, idx - 20):idx]
             
@@ -191,6 +195,10 @@ class CapitulationReversalStrategy:
                     signal_data['panic_score'] = panic_score
             
             signals.append(signal_data)
+            
+            # Fire progress callback periodically
+            if progress_callback and (i % update_frequency == 0 or i == total_iterations - 1):
+                progress_callback(i + 1, total_iterations, 'signal_generation')
         
         # Convert to DataFrame
         signals_df = pd.DataFrame(signals)

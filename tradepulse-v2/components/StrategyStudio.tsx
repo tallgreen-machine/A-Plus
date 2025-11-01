@@ -640,6 +640,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                         </select>
                     </div>
 
+                    {/* Market Regime dropdown - commented out for now, may re-enable later
                     <div>
                         <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">
                             Market Regime
@@ -659,6 +660,7 @@ export const StrategyStudio: React.FC<StrategyStudioProps> = ({ currentUser, onT
                             Optimize parameters for this market condition
                         </p>
                     </div>
+                    */}
 
                     <div>
                         <label className="block text-sm font-medium text-brand-text-secondary mb-1.5">

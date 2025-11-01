@@ -198,7 +198,11 @@ class FailedBreakdownStrategy:
         # Generate trading signals
         signals = []
         
-        for idx in range(self.range_lookback_periods, len(df)):
+        # Calculate total iterations for progress tracking
+        total_iterations = len(df) - self.range_lookback_periods
+        update_frequency = max(1, total_iterations // 100)  # Update ~100 times (every 1%)
+        
+        for i, idx in enumerate(range(self.range_lookback_periods, len(df))):
             row = df.iloc[idx]
             
             signal_data = {
@@ -225,6 +229,10 @@ class FailedBreakdownStrategy:
                 signal_data['wyckoff_phase'] = spring.wyckoff_phase.value
             
             signals.append(signal_data)
+            
+            # Fire progress callback periodically
+            if progress_callback and (i % update_frequency == 0 or i == total_iterations - 1):
+                progress_callback(i + 1, total_iterations, 'signal_generation')
         
         # Convert to DataFrame
         signals_df = pd.DataFrame(signals)
@@ -505,22 +513,23 @@ class FailedBreakdownStrategy:
             Dict with parameter ranges suitable for optimizers
         """
         return {
-            # ULTRA-RELAXED parameter ranges for rare Wyckoff spring patterns
+            # EXTREMELY RELAXED parameter ranges for rare Wyckoff spring patterns
             # Targeting 10-30 trades/year = 1.9-5.8 trades in 69 days (20k candles)
-            # With min_trades=5, need lenient params to catch enough springs
-            'range_lookback_periods': [30, 40, 50],           # Shorter lookbacks (more ranges detected)
-            'range_tightness_threshold': (0.08, 0.18),        # 8% to 18% (MUCH wider ranges allowed)
-            'breakdown_depth': (0.002, 0.01),                 # 0.2% to 1% (lower min for subtle breakdowns)
-            'breakdown_volume_threshold': (0.3, 0.8),         # 30% to 80% (wider range for "weak" volume)
-            'spring_max_duration': [10, 15, 20, 25],          # Longer durations (more patience)
-            'recovery_volume_threshold': (1.2, 3.0),          # 1.2x to 3x (lower min, easier to satisfy)
-            'recovery_speed': [8, 12, 15, 20],                # Slower recovery allowed
-            'orderbook_absorption_threshold': (1.2, 3.0),     # Lower min (optional data anyway)
+            # With min_trades=3 (lowered from 5), these params should generate enough signals
+            # Strategy looks for: consolidation range → weak breakdown → strong recovery
+            'range_lookback_periods': [20, 30, 40, 50],       # Even shorter lookbacks (more ranges)
+            'range_tightness_threshold': (0.10, 0.25),        # 10% to 25% (accept very wide ranges)
+            'breakdown_depth': (0.001, 0.015),                # 0.1% to 1.5% (tiny breakdowns count)
+            'breakdown_volume_threshold': (0.2, 0.9),         # 20% to 90% (almost any breakdown volume)
+            'spring_max_duration': [15, 20, 25, 30],          # Even longer durations (more patience)
+            'recovery_volume_threshold': (1.0, 3.5),          # 1.0x to 3.5x (even normal volume OK)
+            'recovery_speed': [10, 15, 20, 25],               # Much slower recovery allowed
+            'orderbook_absorption_threshold': (1.0, 4.0),     # Lower min (optional data anyway)
             'orderbook_monitoring_depth': [10, 20],           # Simplified
-            'large_trade_multiplier': (2.0, 5.0),             # Lower min (optional data)
-            'smart_money_imbalance': (1.05, 1.5),             # 1.05:1 to 1.5:1 (barely any imbalance needed)
-            'accumulation_score_minimum': (0.3, 0.6),         # 30% to 60% (MUCH lower threshold)
-            'atr_multiplier_sl': (1.0, 2.0),                  # 1 to 2 ATR
-            'risk_reward_ratio': (1.5, 3.0),                  # 1.5:1 to 3:1
-            'max_holding_periods': [30, 50, 75]               # Discrete
+            'large_trade_multiplier': (1.5, 6.0),             # Even lower min (optional data)
+            'smart_money_imbalance': (1.0, 2.0),              # 1.0:1 to 2.0:1 (no imbalance requirement)
+            'accumulation_score_minimum': (0.2, 0.7),         # 20% to 70% (VERY low threshold)
+            'atr_multiplier_sl': (0.8, 2.5),                  # 0.8 to 2.5 ATR (wider range)
+            'risk_reward_ratio': (1.5, 4.0),                  # 1.5:1 to 4:1 (wider range)
+            'max_holding_periods': [25, 40, 60, 80]           # Discrete (wider range)
         }
